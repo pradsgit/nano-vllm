@@ -20,7 +20,7 @@ class Sequence:
         self.output_tokens = []
 
         # memory management for PagedAttention
-        self.block_table = []
+        self.block_table = [] # this stores allocated block_ids
 
         # sampling params
         self.sampling_params = sampling_params
