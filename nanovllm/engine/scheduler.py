@@ -6,10 +6,10 @@ class Scheduler:
     """A scheduler handles sequnece lifecycles"""
     def __init__(
         self, 
-        config,
+        block_size: int,
         block_manager: BlockManager
     ):
-        self.block_size = config.block_size
+        self.block_size = block_size
         # TODO: change to deque
         self.waiting: list[Sequence] = []
         # TODO: change to deque
