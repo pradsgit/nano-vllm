@@ -15,14 +15,14 @@ class Attention(nn.Module):
         self,
         num_heads: int,
         head_dim: int,
-        scale: float,
         num_kv_heads: int,
+        attn_scale: float,
         max_seq_len: int,
     ):
         super().__init__()
         self.num_heads = num_heads
         self.head_dim = head_dim
-        self.scale = scale
+        self.attn_scale = attn_scale
         self.num_kv_heads = num_kv_heads
         self.max_seq_len = max_seq_len
 
@@ -63,6 +63,7 @@ class Attention(nn.Module):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
+        causal_mask = None,
     ):
         """
         Forward pass with "contiguous" KV caching.
@@ -137,6 +138,7 @@ class Attention(nn.Module):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
+        causal_mask=None,
     ):
         num_tokens = q.size(0)
     
@@ -153,15 +155,20 @@ class Attention(nn.Module):
 
         # compute attention scores: Q @ K^T
         # (num_heads, num_tokens, head_dim) @ (num_heads, head_dim, num_tokens)
-        attn_scores = torch.bmm(q, k.transpose(1, 2)) * self.scale
+        attn_scores = torch.bmm(q, k.transpose(1, 2)) * self.attn_scale
 
         # attn_scores shape is (num_heads, num_tokens, num_tokens)
 
         # apply casual mask, TODO: cache this in __init__ to avoid creating this on every forward pass
-        causal_mask = torch.tril(
-            torch.ones(num_tokens, num_tokens, dtype=torch.bool, device=q.device)
-        ).view(1, num_tokens, num_tokens)
-        attn_scores.masked_fill_(~causal_mask, float('-inf'))
+        
+        mask = (
+            causal_mask 
+            if causal_mask is not None else
+            torch.tril(
+                torch.ones(num_tokens, num_tokens, dtype=torch.bool, device=q.device)
+            ).view(1, num_tokens, num_tokens)
+        )
+        attn_scores.masked_fill_(~mask, float('-inf'))
         attn_weights = F.softmax(attn_scores, dim=-1)
 
         output = torch.bmm(attn_weights, v)

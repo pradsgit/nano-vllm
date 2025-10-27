@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from functools import lru_cache
 
 def apply_rope_emb(x, cos, sin):
     x1, x2 = x[..., ::2], x[..., 1::2]
@@ -10,12 +11,16 @@ def apply_rope_emb(x, cos, sin):
 class RotaryPositionEmbedding(nn.Module):
     def __init__(
         self,
-        rotary_dim: int, # should be same as head_size
-        max_seq_len: int, 
+        head_size: int,
+        rotary_dim: int,
+        max_seq_len: int,
         base: float,
         device: torch.device | None = None,
     ):
         super().__init__()
+        self.head_size = head_size
+        assert rotary_dim == head_size
+        
         self.rotary_dim = rotary_dim
         assert rotary_dim % 2 == 0, "dimension should be even in RotaryPositionEmbedding"
 
@@ -42,3 +47,16 @@ class RotaryPositionEmbedding(nn.Module):
         key = apply_rope_emb(key, cos, sin)
 
         return query, key
+
+
+@lru_cache(1)
+def get_rope(
+    head_size: int,
+    rotary_dim: int,
+    max_position: int,
+    base: float,
+    rope_scaling: dict | None = None,
+):
+    assert rope_scaling is None
+    rotary_emb = RotaryPositionEmbedding(head_size, rotary_dim, max_position, base)
+    return rotary_emb

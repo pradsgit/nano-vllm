@@ -25,7 +25,7 @@ class RMSNorm(nn.Module):
         x_dtype = x.dtype
         # upcast to float32 to prevent overflow when squared
         x = x.float()
-        rms = torch.rsqrt(x.pow_(2).mean(dim=-1, keepdim=True) + self.eps)
+        rms = torch.rsqrt(x.pow(2).mean(dim=-1, keepdim=True) + self.eps)
         x.mul_(rms)
         x = x.to(x_dtype)
         x.mul_(self.weight.to(x_dtype))
