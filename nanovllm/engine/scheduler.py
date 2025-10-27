@@ -23,9 +23,11 @@ class Scheduler:
 
     def schedule(self):
         """
-        decide which sequences to run this step (step is a model forward pass).
 
-        the V1 scheduler of vllm can mix both types of requests(prefill and decode) in the same step unlike V0(prev version)
+        decide which sequences to run this step (a 'step' is a model forward pass).
+        this method gets called once every step.
+
+        the V1 scheduler of vllm can handle mix of request types(prefill and decode) in the same step unlike V0(prev version)
 
         priority:
         1. running sequences (seqs already in RUNNING state)    
