@@ -146,6 +146,7 @@ class Attention(nn.Module):
         if self.num_kv_heads != self.num_heads:
             # (num_tokens, num_kv_heads, head_dim) 
             # → (num_tokens, num_heads, head_dim)
+            # TODO: check if dim=1 would be valid for batched sequences
             k = k.repeat_interleave(self.num_queries_per_kv, dim=1)
             v = v.repeat_interleave(self.num_queries_per_kv, dim=1)
 
@@ -155,7 +156,7 @@ class Attention(nn.Module):
 
         # compute attention scores: Q @ K^T
         # (num_heads, num_tokens, head_dim) @ (num_heads, head_dim, num_tokens)
-        attn_scores = torch.bmm(q, k.transpose(1, 2)) * self.attn_scale
+        attn_scores = torch.matmul(q, k.transpose(1, 2)) * self.attn_scale
 
         # attn_scores shape is (num_heads, num_tokens, num_tokens)
 
@@ -171,6 +172,6 @@ class Attention(nn.Module):
         attn_scores.masked_fill_(~mask, float('-inf'))
         attn_weights = F.softmax(attn_scores, dim=-1)
 
-        output = torch.bmm(attn_weights, v)
+        output = torch.matmul(attn_weights, v)
 
         return output.transpose(0, 1) # Back to (num_tokens, num_heads, head_dim)
