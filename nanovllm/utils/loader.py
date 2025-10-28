@@ -3,17 +3,34 @@ import torch.nn as nn
 from nanovllm.model.qwen3 import Qwen3ForCausalLM
 from nanovllm.config import Config
 from transformers import AutoConfig
+from glob import glob
 
 
 def load_model(model: nn.Module, model_path: str):
     """
     phase 1: simple weight loading (single gpu, no packing)
+    load pre-trained weights to our model
 
     Args:
         model: Our Qwen3ForCausalLM instance
         model_path: Path to HF model (local or HF Hub name)
     """
+    # download the model weights from huggingface hub if needed
+    if not os.path.exists(model_path):
+        from huggingface_hub import snapshot_download
+        print(f'downloading {model_path}...')
+        model_path = snapshot_download(model_path)
 
+    # load weights
+    for file in glob(os.path.join(model_path, '*.safetensors')):
+        with safe_open(file, framework='pt', device='cpu') as f:
+            for name in f.keys():
+                try:
+                    param = model.get_parameter(name)
+                    param.data.copy_(f.get_tensor(name))
+                except AttributeError:
+                    print(f'unable to find the param {name}')
+                    continue
 
 
 import os

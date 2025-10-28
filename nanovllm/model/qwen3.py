@@ -224,8 +224,8 @@ class Qwen3ForCausalLM(nn.Module):
 
     def forward(
         self,
-        positions: torch.Tensor, # (num_tokens, )
         input_ids: torch.Tensor, # (num_tokens, )
+        positions: torch.Tensor, # (num_tokens, )
     ) -> torch.Tensor:
         
         hidden_states = self.model(input_ids, positions)
