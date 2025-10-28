@@ -16,12 +16,33 @@ class Scheduler:
         self.running: list[Sequence] = []
         self.block_manager = block_manager
 
-    def add_request(self, seq: Sequence) -> None:
+    def add(self, seq: Sequence) -> None:
         """add a new seq to waiting queue"""
         seq.status = SequenceStatus.WAITING
         self.waiting.append(seq)
 
+    def is_finished(self):
+        return not self.waiting or self.running
+
     def schedule(self):
+        # phase1: only run one sequence at a time
+        if self.running:
+            return self.running, 0
+        
+        if self.waiting:
+            seq = self.waiting.pop(0)
+            # Allocate blocks
+            if not self._allocate_blocks(seq):
+                self.waiting.insert(0, seq)
+                return [], 0
+            
+            self.running.append(seq)
+            num_prefill = 1 if len(seq.output_tokens) == 0 else 0
+            return [seq], num_prefill
+        
+        return [], 0
+
+    def schedule_phase2(self):
         """
 
         decide which sequences to run this step (a 'step' is a model forward pass).

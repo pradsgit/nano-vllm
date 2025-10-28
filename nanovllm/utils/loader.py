@@ -136,14 +136,11 @@ def compare_model_params(my_model: nn.Module, hf_model_path: str):
         'only_in_mine': only_in_mine
     }
 
-
-# Usage:
-model_name = "Qwen/Qwen3-0.6B"
-print(f"Loading model {model_name}...")
-config = Config(model_name)
-hf_config = AutoConfig.from_pretrained(config.model)
-
-model = Qwen3ForCausalLM(hf_config)
-
-result = compare_model_params(model, model_name)
-print(result)
+if __name__ == "__main__":
+    model_name = "Qwen/Qwen3-0.6B"
+    print(f"Loading model {model_name}...")
+    config = Config(model_name)
+    hf_config = AutoConfig.from_pretrained(config.model)
+    model = Qwen3ForCausalLM(hf_config)
+    result = compare_model_params(model, model_name)
+    print(result)
