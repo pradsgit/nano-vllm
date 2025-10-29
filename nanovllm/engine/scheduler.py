@@ -25,20 +25,56 @@ class Scheduler:
         return not self.waiting or self.running
 
     def schedule(self):
-        # phase1: only run one sequence at a time
+        """
+        phase 1: single sequence at a time
+
+        returns:
+            (scheduled_seqs, num_prefill)
+        """
+
+        # handle running sequence
         if self.running:
-            return self.running, 0
-        
-        if self.waiting:
-            seq = self.waiting.pop(0)
-            # Allocate blocks
-            if not self._allocate_blocks(seq):
-                self.waiting.insert(0, seq)
+            seq = self.running[0] # only one sequence for phase 1
+
+            if seq.is_finished:
                 return [], 0
             
-            self.running.append(seq)
-            num_prefill = 1 if len(seq.output_tokens) == 0 else 0
-            return [seq], num_prefill
+            # check if we need more blocks for next decode step
+            blocks_needed = seq.get_num_logical_blocks(self.block_size)
+            blocks_has = len(seq.block_table)
+
+            if blocks_needed > blocks_has:
+                # need to allocate more blocks
+                additional_blocks = blocks_needed - blocks_has
+                # check if block manager can allocate
+                if self.block_manager.can_allocate(additional_blocks):
+                    # allocate and extend block table
+                    allocated_blocks = self.block_manager.allocate(additional_blocks)
+                    seq.block_table.extend(allocated_blocks)
+                else:
+                    # Can't allocate, can't run (should rarely happen in Phase 1)
+                    return [], 0
+                
+            return [seq], 0  # num_prefill = 0 (decode mode)
+        # step 2: No running sequence, try to start one from waiting
+        if self.waiting:
+            print('waiting seqs present')
+            seq = self.waiting.pop(0)
+            blocks_needed = seq.get_num_logical_blocks(block_size=self.block_size)
+
+            if self.block_manager.can_allocate(blocks_needed):
+                allocated_blocks = self.block_manager.allocate(blocks_needed)
+                seq.block_table = allocated_blocks
+
+                # move to running status
+                seq.status = SequenceStatus.RUNNING
+                self.running.append(seq)
+
+                return [seq], 1
+        else:
+            # Can't allocate, put back in waiting queue
+            self.waiting.insert(0, seq)
+            return [], 0
         
         return [], 0
 
@@ -118,16 +154,3 @@ class Scheduler:
                 finished_seqs.append(seq)
         
         return finished_seqs
-
-
-
-
-                    
-            
-
-
-
-
-
-        
-        

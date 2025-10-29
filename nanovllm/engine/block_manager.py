@@ -1,11 +1,13 @@
 import torch
 from collections import deque
+from transformers import Qwen3Config
 
 class BlockManager:
     def __init__(
         self,
         block_size: int,
         num_blocks: int,
+        config: Qwen3Config
     ):
         self.block_size = block_size
         self.num_blocks = num_blocks
@@ -16,11 +18,11 @@ class BlockManager:
         for i in range(num_blocks):
             # Qwen3-0.6B values
             block = torch.zeros(
-                2,
-                24, 
+                2, # for k and v
+                config.num_hidden_layers, 
                 block_size, 
-                2, 
-                64, 
+                config.num_key_value_heads, 
+                config.head_dim, 
                 dtype=torch.float16, 
                 device='cuda'
             ) # each block takes 224 KB of HBM
@@ -35,7 +37,7 @@ class BlockManager:
     def allocate(self, num_blocks: int) -> list[int]:
         """allocates blocks and updates free_block_ids?"""
         # check if num_blocks are available?
-        if not self.can_allocate():
+        if not self.can_allocate(num_blocks):
             raise ValueError(f"Cannot allocate {num_blocks}, only {len(self.free_block_ids)} free")
         
         allocated = []

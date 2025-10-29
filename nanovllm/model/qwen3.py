@@ -26,13 +26,15 @@ class Qwen3Attention(nn.Module):
         self.num_kv_heads = num_kv_heads
         self.head_dim = head_dim or hidden_size // self.num_heads
 
+        # Never assume num_heads * head_dim = hidden_size
+
         self.q_size = self.num_heads * self.head_dim
         self.kv_size = self.num_kv_heads * self.head_dim
 
-        self.q_proj = nn.Linear(hidden_size, self.q_size, bias=qkv_bias)
+        self.q_proj = nn.Linear(self.hidden_size, self.num_heads * self.head_dim, bias=qkv_bias)
         self.k_proj = nn.Linear(hidden_size, self.kv_size, bias=qkv_bias)
         self.v_proj = nn.Linear(hidden_size, self.kv_size, bias=qkv_bias)
-        self.o_proj = nn.Linear(hidden_size, hidden_size, bias=qkv_bias)
+        self.o_proj = nn.Linear(self.num_heads * self.head_dim, hidden_size, bias=qkv_bias)
 
         self.rope = get_rope(
             self.head_dim,

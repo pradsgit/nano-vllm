@@ -23,7 +23,7 @@ class LLMEngine:
         config = Config(model, **config_kwargs)
         block_size = 16
 
-        self.block_manager = BlockManager(num_blocks=100, block_size=block_size)
+        self.block_manager = BlockManager(num_blocks=100, block_size=block_size, config=config.hf_config)
         self.scheduler = Scheduler(block_size=block_size, block_manager=self.block_manager)
         self.model_runner = ModelRunner(config)
         self.sampler = Sampler()
@@ -96,7 +96,7 @@ class LLMEngine:
             seq.status = 'finished'
             self.scheduler.free_finished()
 
-        return {seq.seq_id: seq.output_tokens.copy()}
+        return {seq.id: seq.output_tokens.copy()}
 
     
     def _is_finished(self, seq: Sequence):
@@ -109,7 +109,7 @@ class LLMEngine:
         
         # 2. eos token generated
         if hasattr(self.config, 'eos') and self.config.eos is not None:
-            if seq.output_tokens and seq.output_tokens[-1] == self.config.eos_token_id:
+            if seq.output_tokens and seq.output_tokens[-1] == self.config.eos:
                 return True
 
     def generate(

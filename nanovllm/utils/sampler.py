@@ -12,7 +12,8 @@ class Sampler:
     ) -> list[int]:
         
         # temperature scaling
-        logits = logits.float().div_(temperatures.unsqueeze(dim=1))
+        # logits = logits.float().div_(temperatures.unsqueeze(dim=1))
+        logits = logits.float() / temperatures.unsqueeze(-1).clamp(min=1e-5)
         # softmax
         probs = F.softmax(logits, dim=-1)
         # sampling from multinomial

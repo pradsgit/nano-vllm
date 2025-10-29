@@ -7,9 +7,16 @@ class Config:
     model: str
     max_model_len: int = 4096
     max_num_seqs: int = 512
-    eos: int = -1
-    hf_config: AutoConfig | None = None,
+    eos: int = None
+    hf_config: AutoConfig | None = None
 
-    def __post__init__(self):
-        os.path.isdir(self.model)
-        self.hf_config = AutoConfig.from_pretrained(self.model)
+    def __post_init__(self):
+        assert os.path.isdir(self.model)
+        if self.hf_config is None:
+            self.hf_config = AutoConfig.from_pretrained(
+                self.model,
+                trust_remote_code=True,
+            )
+        
+        if self.eos is None:
+            self.eos = getattr(self.hf_config, 'eos_token_id', None)
