@@ -4,6 +4,7 @@ from nanovllm.model.qwen3 import Qwen3ForCausalLM
 from nanovllm.config import Config
 from transformers import AutoConfig
 from glob import glob
+from safetensors import safe_open
 
 
 def load_model(model: nn.Module, model_path: str):
@@ -31,11 +32,6 @@ def load_model(model: nn.Module, model_path: str):
                 except AttributeError:
                     print(f'unable to find the param {name}')
                     continue
-
-
-import os
-from glob import glob
-from safetensors import safe_open
 
 def compare_model_params(my_model: nn.Module, hf_model_path: str):
     """

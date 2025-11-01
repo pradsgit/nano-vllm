@@ -61,7 +61,7 @@ class Qwen3Attention(nn.Module):
 
         # project x to qkv
         #TODO: may be transpose(1, 2) here to get shape (num_heads, num_tokens, head_dim)
-        q = self.q_proj(x).view(-1, self.num_heads, self.head_dim)
+        q = self.q_proj(x).view(-1, self.num_heads, self.head_dim) # (num_tokens, num_heads, head_dim)
         k = self.k_proj(x).view(-1, self.num_kv_heads, self.head_dim)
         v = self.v_proj(x).view(-1, self.num_kv_heads, self.head_dim)
 
@@ -166,7 +166,8 @@ class Qwen3DecoderLayer(nn.Module):
         if residual is None:
             # first layer, no residual yet
             # Just normalize hidden_sattes and save original as residual
-            hidden_states, residual = self.input_layernorm(hidden_states), hidden_states
+            residual = hidden_states.clone()
+            hidden_states= self.input_layernorm(hidden_states)
         else:
             # Subsequent layers: add residual inside norm
             # This uses RMSNorm's add_rms_forward method
@@ -189,7 +190,7 @@ class Qwen3Model(nn.Module):
         config: Qwen3Config,
     ):
         super().__init__()
-        print(config)
+        # print(config)
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
         self.layers = nn.ModuleList([Qwen3DecoderLayer(config) for _ in range(config.num_hidden_layers)])
         # final norm

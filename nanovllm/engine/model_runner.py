@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+
+from nanovllm.utils.sampler import Sampler
 from nanovllm.model.qwen3 import Qwen3ForCausalLM
 from nanovllm.utils.loader import load_model
 from nanovllm.config import Config
@@ -17,6 +19,7 @@ class ModelRunner:
         hf_config = config.hf_config
         self.model = Qwen3ForCausalLM(hf_config)
         self.model = self.model.cuda()
+        self.sampler = Sampler()
         # load HF weights
         load_model(self.model, config.model)
 
@@ -56,6 +59,21 @@ class ModelRunner:
         # prepare inputs
         input_ids, positions = self._prepare_inputs(seqs)
         logits = self.run_model(input_ids, positions)
+
+        if is_prefill:
+            last_logit = logits[-1, :]
+        else:
+            last_logit = logits
+
+        temperature = torch.tensor(
+            [seqs[0].sampling_params.temperature],
+            dtype=torch.float32,
+            device=logits.device,
+        )
+
+        next_token_tensor = self.sampler(last_logit, temperature)
+        next_token = next_token_tensor.item()
+
         # run sampling to get the tokens
-        return logits
+        return next_token
         

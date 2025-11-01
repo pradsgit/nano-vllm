@@ -2,8 +2,12 @@ import torch
 import torch.nn as nn
 from functools import lru_cache
 
-def apply_rope_emb(x, cos, sin):
-    x1, x2 = x[..., ::2], x[..., 1::2]
+def apply_rotary_emb(
+    x: torch.tensor, 
+    cos: torch.tensor, 
+    sin: torch.tensor,
+):
+    x1, x2 = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2:]
     y1 = x1 * cos - x2 * sin
     y2 = x1 * sin + x2 * cos
     return torch.stack([y1, y2], dim=-1).flatten(-2)
@@ -24,7 +28,11 @@ class RotaryPositionEmbedding(nn.Module):
         self.rotary_dim = rotary_dim
         assert rotary_dim % 2 == 0, "dimension should be even in RotaryPositionEmbedding"
 
-        inv_freqs = 1.0 / (base**(torch.arange(0, rotary_dim, 2, dtype=torch.float, device=device) / rotary_dim))
+        inv_freqs = 1.0 / (
+            base ** (torch.arange(0, rotary_dim, 2, dtype=torch.int64).to(device=device, dtype=torch.float) / rotary_dim)
+        )
+
+        # inv_freqs = 1.0 / (base**(torch.arange(0, rotary_dim, 2, dtype=torch.float, device=device) / rotary_dim))
         positions = torch.arange(max_seq_len, device=device, dtype=torch.float)
         freqs = torch.einsum("i,j -> ij", positions, inv_freqs) # freqs shape is [max_seq_len, rotary_dim // 2]
 
@@ -37,15 +45,14 @@ class RotaryPositionEmbedding(nn.Module):
     @torch.compile
     def forward(
         self,
-        token_positions: torch.Tensor,
+        positions: torch.Tensor,
         query: torch.Tensor,
         key: torch.Tensor,
-    ):
-        cos_sin = self.cos_sin_cache[token_positions]
-        cos, sin = cos_sin.chunk(2, dim=-1) # each shape is (max_seq_len, 1, rotary_dim // 2)
-        query = apply_rope_emb(query, cos, sin)
-        key = apply_rope_emb(key, cos, sin)
-
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        cos_sin = self.cos_sin_cache[positions]
+        cos, sin = cos_sin.chunk(2, dim=-1)
+        query = apply_rotary_emb(query, cos, sin)
+        key = apply_rotary_emb(key, cos, sin)
         return query, key
 
 

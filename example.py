@@ -4,11 +4,11 @@ from transformers import AutoTokenizer
 
 def main():
     model_name = 'Qwen/Qwen3-0.6B'
-    model_path = os.path.expanduser('~/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B/snapshots/c1899de289a04d12100db370d81485cdf75e47ca')
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    # model_path = os.path.expanduser('~/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B/snapshots/c1899de289a04d12100db370d81485cdf75e47ca')
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-    # llm = LLM(model_path)
-    # sampling_params = SamplingParams(temperature=0.6, max_tokens=256)
+    llm = LLM(model_name)
+    sampling_params = SamplingParams(temperature=0.6, max_tokens=256)
 
     prompts = [
         "The capital of India is",

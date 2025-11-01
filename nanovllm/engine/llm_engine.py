@@ -47,6 +47,7 @@ class LLMEngine:
         self.scheduler.add(seq)
         return seq
     
+
     def _sample(self, logits, sequences):
         temperatures = torch.tensor(
             [seq.sampling_params.temperature for seq in sequences],
@@ -71,22 +72,22 @@ class LLMEngine:
         is_prefill = len(seq.output_tokens) == 0
 
         # run the model
-        logits = self.model_runner.run([seq], is_prefill)
+        next_token = self.model_runner.run([seq], is_prefill)
 
-        if is_prefill:
-            # Take last position's logits
-            last_logit = logits[-1:, :]  # (1, vocab_size)
-        else:
-            # decode already returns single logit
-            last_logit = logits  # (1, vocab_size)
+        # if is_prefill:
+        #     # Take last position's logits
+        #     last_logit = logits[-1:, :]  # (1, vocab_size)
+        # else:
+        #     # decode already returns single logit
+        #     last_logit = logits  # (1, vocab_size)
 
-        temperature = torch.tensor(
-            [seq.sampling_params.temperature],
-            dtype=torch.float32,
-            device=logits.device,
-        )
-        next_token_tensor = self.sampler(last_logit, temperature)
-        next_token = next_token_tensor.item()
+        # temperature = torch.tensor(
+        #     [seq.sampling_params.temperature],
+        #     dtype=torch.float32,
+        #     device=logits.device,
+        # )
+        # next_token_tensor = self.sampler(last_logit, temperature)
+        # next_token = next_token_tensor.item()
 
         # update sequence
         seq.add_token(next_token)

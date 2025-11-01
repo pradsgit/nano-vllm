@@ -124,8 +124,8 @@ class Attention(nn.Module):
             k_for_attn, v_for_attn: All cached tokens including new one
         """
         pos = self.num_cached_tokens
-        self.k_cache[pos] = k.squeeze(1) # remove first dimension cause it is 1
-        self.v_cache[pos] = v.squeeze(1)
+        self.k_cache[pos] = k.squeeze(0) # remove first dimension cause it is 1
+        self.v_cache[pos] = v.squeeze(0)
         self.num_cached_tokens += 1
 
         # return all the tokens k and v
