@@ -56,9 +56,8 @@ class Scheduler:
                     return [], 0
                 
             return [seq], 0  # num_prefill = 0 (decode mode)
-        # step 2: No running sequence, try to start one from waiting
+        # step 2: try to start one from waiting
         if self.waiting:
-            print('waiting seqs present')
             seq = self.waiting.pop(0)
             blocks_needed = seq.get_num_logical_blocks(block_size=self.block_size)
 

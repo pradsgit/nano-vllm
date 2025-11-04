@@ -36,6 +36,9 @@ class Qwen3Attention(nn.Module):
         self.v_proj = nn.Linear(hidden_size, self.kv_size, bias=qkv_bias)
         self.o_proj = nn.Linear(self.num_heads * self.head_dim, hidden_size, bias=qkv_bias)
 
+        self.q_norm = RMSNorm(self.head_dim, rms_norm_eps)
+        self.k_norm = RMSNorm(self.head_dim, rms_norm_eps)
+
         self.rope = get_rope(
             self.head_dim,
             rotary_dim=self.head_dim,
@@ -44,19 +47,16 @@ class Qwen3Attention(nn.Module):
             rope_scaling=rope_scaling,
         )
 
-        self.q_norm = RMSNorm(self.head_dim, rms_norm_eps)
-        self.k_norm = RMSNorm(self.head_dim, rms_norm_eps)
-
         self.self_attn_scale = self.head_dim ** -0.5
         self.attention = Attention(num_heads, self.head_dim, num_kv_heads, self.self_attn_scale, max_position)
 
     def forward(
         self,
         x: torch.Tensor, # (num_tokens, hidden_size)
-        positions: torch.Tensor, # (num_tokens,) - position indices
+        positions: torch.Tensor, # (num_tokens, ) - position indices
     ): 
         # shape of x is (seq_len, hidden_size) phase1: considers only one sequence
-        seq_len, hidden_size = x.size()
+        num_tokens, hidden_size = x.size()
         assert self.hidden_size == hidden_size
 
         # project x to qkv
@@ -88,15 +88,15 @@ class Qwen3Attention(nn.Module):
         # attention with KV caching
         # Input: (num_tokens, num_heads, head_dim)
         # Output: (num_tokens, num_heads, head_dim)
-        attn_output = self.attention(q, k, v)
+        attn_output = self.attention(q, k, v) # attn_ouptut might not be contiguous
 
         # flatten heads back
         # (num_tokens, num_heads, head_dim) -> (num_tokens, num_heads * head_dim)
-        attn_output = attn_output.reshape(-1, self.q_size)
+        attn_output = attn_output.reshape(-1, self.q_size) # using .reshape() cause attn_output might be non-contiguous
 
         output = self.o_proj(attn_output)
 
-        return output
+        return output   
     
 class Qwen3MLP(nn.Module):
     def __init__(
@@ -166,8 +166,8 @@ class Qwen3DecoderLayer(nn.Module):
         if residual is None:
             # first layer, no residual yet
             # Just normalize hidden_sattes and save original as residual
-            residual = hidden_states.clone()
-            hidden_states= self.input_layernorm(hidden_states)
+            residual = hidden_states
+            hidden_states = self.input_layernorm(hidden_states)
         else:
             # Subsequent layers: add residual inside norm
             # This uses RMSNorm's add_rms_forward method
@@ -175,12 +175,12 @@ class Qwen3DecoderLayer(nn.Module):
 
         # apply attention
         hidden_states = self.self_attn(hidden_states, positions)
-        # ppply post-attention norm with residual
+        # apply post-attention norm with residual
         # The residual from attention gets added here
         hidden_states, residual = self.post_attention_layernorm(hidden_states, residual)
         # apply ffn
         hidden_states = self.mlp(hidden_states)
-        # return output and residual for next layer
+        # return output and residual for next layer; residual adding after mlp happens in next layer
         return hidden_states, residual
 
 

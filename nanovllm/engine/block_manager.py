@@ -25,7 +25,7 @@ class BlockManager:
                 config.head_dim, 
                 dtype=torch.float16, 
                 device='cuda'
-            ) # each block takes 224 KB of HBM
+            ) 
             self.gpu_blocks.append(block)
 
         # track free blocks

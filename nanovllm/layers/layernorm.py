@@ -1,7 +1,5 @@
-# hidden_size, gain param of hidden_size size
 import torch
 import torch.nn as nn
-
 
 class RMSNorm(nn.Module):
     """
@@ -17,7 +15,9 @@ class RMSNorm(nn.Module):
         super().__init__()
         self.hidden_size = hidden_size
         self.eps = eps
-        self.weight = nn.Parameter(torch.ones(hidden_size, dtype=dtype, device=device))
+        self.weight = nn.Parameter(
+            torch.ones(hidden_size, dtype=None, device=device)
+        )
 
     @torch.compile
     def rms_forward(self, x:torch.Tensor) -> torch.Tensor:
@@ -26,9 +26,9 @@ class RMSNorm(nn.Module):
         # upcast to float32 to prevent overflow when squared
         x = x.float()
         rms = torch.rsqrt(x.pow(2).mean(dim=-1, keepdim=True) + self.eps)
+        # back to its original dtype
         x.mul_(rms)
-        x = x.to(x_dtype)
-        x.mul_(self.weight.to(x_dtype))
+        x = x.to(x_dtype).mul_(self.weight)
         return x
     
     @torch.compile
@@ -37,17 +37,12 @@ class RMSNorm(nn.Module):
         x: torch.Tensor,
         residual: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        # what exactly happens here?
-        # residual is added inside the next normalization layer instead of immediately.
-        # The additions don't happen "after" sublayers - they happen "before the next norm" instead.
-        x_dtype = x.dtype
+        orig_dtype = x.dtype
         x = x.float().add_(residual.float())
-        # now x has residual info
-        residual = x.to(x_dtype )
-        rms = torch.rsqrt(x.pow(2).mean(dim=-1, keepdim=True) + self.eps)
-        x.mul_(rms)
-        x = x.to(x_dtype)
-        x.mul_(self.weight.to(x_dtype))
+        residual = x.to(orig_dtype)
+        var = x.pow(2).mean(dim=-1, keepdim=True)
+        x.mul_(torch.rsqrt(var + self.eps))
+        x = x.to(orig_dtype).mul_(self.weight)
         return x, residual
 
     def forward(
@@ -60,3 +55,46 @@ class RMSNorm(nn.Module):
             return self.rms_forward(x)
         else:
             return self.add_rms_forward(x, residual)
+        
+
+class RMSNorm(nn.Module):
+    """
+    Computes x -> w * x / sqrt(E[x^2] + eps)
+    """
+    def __init__(
+        self,
+        hidden_size: int, 
+        eps: float = 1e-6,
+        dtype: torch.dtype | None = None, 
+        device: torch.device | None = None,
+    ):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.eps = eps
+        self.weight = nn.Parameter(
+            torch.ones(hidden_size, dtype=dtype, device=device)
+        )
+    
+    @torch.compile
+    def forward(
+        self,
+        x: torch.Tensor, # (num_tokens, hidden_size)
+        residual: torch.Tensor | None = None# (num_tokens, hidden_size)
+    ):
+        # RMSNorm always upcasts inputs to float32 for stability
+        x_dtype = x.dtype
+
+        # add residual if provided
+        if residual is not None:
+            x = x.float().add_(residual)
+            new_residual = x.to(x_dtype)
+
+        # compute rms in float32
+        x = x.float() if residual is None else x
+        # calculate rms scaling factor 
+        rms_factor = torch.rsqrt(x.pow(2).mean(dim=-1, keepdim=True) + self.eps) # (num_tokens, 1)
+        x.mul_(rms_factor) # in-place op # (num_tokens, hidden_size)
+        # in qwen3, the multiplication with the weight is done on the original dtype tensor
+        x = x.to(x_dtype).mul_(self.weight)
+
+        return (x, new_residual) if residual is not None else x

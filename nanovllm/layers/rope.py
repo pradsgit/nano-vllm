@@ -4,13 +4,13 @@ from functools import lru_cache
 
 def apply_rotary_emb(
     x: torch.tensor, 
-    cos: torch.tensor, 
+    cos: torch.tensor, # shape is (num_tokens, 1, head_size // 2)
     sin: torch.tensor,
 ):
-    x1, x2 = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2:]
+    x1, x2 = torch.chunk(x.float(), 2, dim=-1) # x1, x2 shape is (num_tokens, num_heads, head_size // 2)
     y1 = x1 * cos - x2 * sin
     y2 = x1 * sin + x2 * cos
-    return torch.stack([y1, y2], dim=-1).flatten(-2)
+    return torch.cat((y1, y2), dim=-1).to(x.dtype)
 
 class RotaryPositionEmbedding(nn.Module):
     def __init__(
@@ -49,8 +49,8 @@ class RotaryPositionEmbedding(nn.Module):
         query: torch.Tensor,
         key: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        cos_sin = self.cos_sin_cache[positions]
-        cos, sin = cos_sin.chunk(2, dim=-1)
+        cos_sin = self.cos_sin_cache[positions] # cos_sin shape is (num_tokens, 1, head_size)
+        cos, sin = cos_sin.chunk(2, dim=-1) # cos, sin shape is (num_tokens, 1, head_size // 2)
         query = apply_rotary_emb(query, cos, sin)
         key = apply_rotary_emb(key, cos, sin)
         return query, key

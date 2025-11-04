@@ -17,11 +17,17 @@ class ModelRunner:
     ):  
         self.config = config
         hf_config = config.hf_config
+        torch.set_default_device('cuda')
+        torch.set_default_dtype(hf_config.torch_dtype)
         self.model = Qwen3ForCausalLM(hf_config)
         self.model = self.model.cuda()
         self.sampler = Sampler()
         # load HF weights
         load_model(self.model, config.model)
+
+        print('move model to GPU')
+        self.model = self.model.cuda()
+        self.model.eval()
 
     def _prepare_inputs(
         self, 
@@ -65,6 +71,7 @@ class ModelRunner:
         else:
             last_logit = logits
 
+        # run sampling to get the tokens
         temperature = torch.tensor(
             [seqs[0].sampling_params.temperature],
             dtype=torch.float32,
@@ -74,6 +81,5 @@ class ModelRunner:
         next_token_tensor = self.sampler(last_logit, temperature)
         next_token = next_token_tensor.item()
 
-        # run sampling to get the tokens
         return next_token
         

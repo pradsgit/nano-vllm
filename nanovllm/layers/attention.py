@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 class Attention(nn.Module):
     """
-    Basic attention implementation (no KV cache yet).
+    Basic attention implementation.
     
     Input shapes for Phase1 only single sequence handling:
     - q: (num_tokens, num_heads, head_dim)
@@ -124,12 +124,12 @@ class Attention(nn.Module):
             k_for_attn, v_for_attn: All cached tokens including new one
         """
         pos = self.num_cached_tokens
-        self.k_cache[pos] = k.squeeze(0) # remove first dimension cause it is 1
+        self.k_cache[pos] = k.squeeze(0) # remove first dimension cause it is 1 in decode phase
         self.v_cache[pos] = v.squeeze(0)
         self.num_cached_tokens += 1
 
         # return all the tokens k and v
-        k_all = self.k_cache[:self.num_cached_tokens]
+        k_all = self.k_cache[:self.num_cached_tokens] # k_all is a new tensor view that points to a portion of self.k_cache's storage
         v_all = self.v_cache[:self.num_cached_tokens]
         return k_all, v_all
 
@@ -140,14 +140,15 @@ class Attention(nn.Module):
         v: torch.Tensor,
         causal_mask=None,
     ):
-        num_tokens = q.size(0)
+        num_query_tokens = q.size(0)
+        num_key_tokens = k.size(0)
     
         # handle GQA: repeat K and V to match number of Q heads
         if self.num_kv_heads != self.num_heads:
             # (num_tokens, num_kv_heads, head_dim) 
             # → (num_tokens, num_heads, head_dim)
             # TODO: check if dim=1 would be valid for batched sequences
-            k = k.repeat_interleave(self.num_queries_per_kv, dim=1)
+            k = k.repeat_interleave(self.num_queries_per_kv, dim=1) # dim value must be head dimension of k
             v = v.repeat_interleave(self.num_queries_per_kv, dim=1)
 
         q = q.transpose(0, 1) # (num_heads, num_tokens, head_dim)
@@ -161,17 +162,21 @@ class Attention(nn.Module):
         # attn_scores shape is (num_heads, num_tokens, num_tokens)
 
         # apply casual mask, TODO: cache this in __init__ to avoid creating this on every forward pass
-        
-        mask = (
-            causal_mask 
-            if causal_mask is not None else
-            torch.tril(
-                torch.ones(num_tokens, num_tokens, dtype=torch.bool, device=q.device)
-            ).view(1, num_tokens, num_tokens)
-        )
-        attn_scores.masked_fill_(~mask, float('-inf'))
+
+        if causal_mask is None:
+            mask = torch.ones(num_query_tokens, num_key_tokens, dtype=torch.bool, device=q.device)
+
+            if num_query_tokens > 1:
+                # this is prefill phase
+                mask = torch.tril(mask)
+
+            # During decode (num_query_tokens == 1): mask is all True
+
+            causal_mask = mask.unsqueeze_(0)
+
+        attn_scores.masked_fill_(~causal_mask, float('-inf'))
         attn_weights = F.softmax(attn_scores, dim=-1)
 
-        output = torch.matmul(attn_weights, v)
+        output = torch.matmul(attn_weights, v) # (num_heads, num_tokens, num_tokens) @ (num_heads, num_tokens, head_dim) => (num_heads, num_tokens, head_dim)
 
-        return output.transpose(0, 1) # Back to (num_tokens, num_heads, head_dim)
+        return output.transpose(0, 1) # Back to (num_tokens, num_heads, head_dim) non-contiguous output
