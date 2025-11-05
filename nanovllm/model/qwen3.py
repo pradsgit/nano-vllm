@@ -201,9 +201,15 @@ class Qwen3Model(nn.Module):
         input_ids: torch.Tensor, # 
         positions: torch.Tensor,
     ):
+        from nanovllm.utils.cache_context import get_context
+
         hidden_states = self.embed_tokens(input_ids)
         residual = None
-        for layer in self.layers:
+
+        ctx = get_context()
+
+        for idx, layer in enumerate(self.layers):
+            ctx.layer_idx = idx
             hidden_states, residual = layer(positions, hidden_states, residual)
 
         hidden_states, _ = self.norm(hidden_states, residual)

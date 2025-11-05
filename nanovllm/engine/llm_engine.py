@@ -21,10 +21,10 @@ class LLMEngine:
         config_fields = {field.name for field in fields(Config)}
         config_kwargs = {k: v for k, v in kwargs.items() if k in config_fields}
         config = Config(model, **config_kwargs)
-        block_size = 16
 
-        self.block_manager = BlockManager(num_blocks=100, block_size=block_size, config=config.hf_config)
-        self.scheduler = Scheduler(block_size=block_size, block_manager=self.block_manager)
+        # block_size = config.kvcache_block_size
+
+        self.scheduler = Scheduler(config)
         self.model_runner = ModelRunner(config)
         self.sampler = Sampler()
 
@@ -57,6 +57,23 @@ class LLMEngine:
         next_tokens_tensor = self.sampler(logits, temperatures)
         return next_tokens_tensor.tolist()
     
+    def exit(self):
+        import gc, torch
+
+        # delete model_runner, model and k_cache and v_cache
+        if hasattr(self.model_runner, 'model'):
+            for layer in self.model_runner.model.model.layers:
+                layer.self_attn.attention.k_cache = None
+                layer.self_attn.attention.v_cache = None
+                layer.self_attn.attention.num_cached_tokens = 0
+
+            del self.model_runner.model
+            del self.model_runner
+        torch.cuda.empty_cache()
+
+        gc.collect()
+        print('\n\nGPU cleanup complete')
+
     def step(self):
         """
         executes one generation step

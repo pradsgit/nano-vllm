@@ -9,9 +9,12 @@ class Config:
     max_num_seqs: int = 512
     eos: int = None
     hf_config: AutoConfig | None = None
+    gpu_memory_utilization: float = 0.9
+    kvcache_block_size: int = 16
+    num_kvcache_blocks: int = -1
 
     def __post_init__(self):
-        assert os.path.isdir(self.model)
+        # assert os.path.isdir(self.model)
         if self.hf_config is None:
             self.hf_config = AutoConfig.from_pretrained(
                 self.model,

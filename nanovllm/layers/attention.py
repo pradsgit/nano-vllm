@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from nanovllm.utils.cache_context import get_context, CacheContext
 
 class Attention(nn.Module):
     """
@@ -58,6 +59,56 @@ class Attention(nn.Module):
 
         self.num_cached_tokens = 0
 
+    def _write_to_cache(
+        self,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        ctx: CacheContext,
+        num_tokens: int,
+    ):
+        """
+        write k, v into kv_blocks at current layer's slice
+        """
+        kv_blocks = ctx.kv_blocks # [tensor, tensor] each tensor shape: (2, num_hidden_layers, block_size, num_kv_heads, head_dim)
+        layer_idx = ctx.layer_idx
+        slot_idx = ctx.slot_idx
+        block_size = kv_blocks[0].size(2)
+
+        for i in range(num_tokens):
+            pos = slot_idx + i
+            block_num = pos // block_size
+            pos_in_block = pos % block_size
+
+            kv_blocks[block_num][0, layer_idx, pos_in_block] = k[i]
+            kv_blocks[block_num][1, layer_idx, pos_in_block] = v[i]
+
+    def _read_from_cache(self, ctx: CacheContext, total_tokens: int):
+        """
+        read all k,v cached blocks for this current layer
+        """
+        kv_blocks = ctx.kv_blocks 
+        # eg: kv_blocks is list of tensors eg: [tensor, tensor] 
+        # each tensor in the list is of shape: (2, num_hidden_layers, block_size, num_kv_heads, head_dim)
+        layer_idx = ctx.layer_idx
+        block_size = kv_blocks[0].size(2) 
+
+        k_list, v_list = [], []
+
+        for i in range(total_tokens):
+            block_num = i // block_size
+            pos_in_block = i % block_size
+
+            k_list.append(kv_blocks[block_num][0, layer_idx, pos_in_block])
+            v_list.append(kv_blocks[block_num][1, layer_idx, pos_in_block])
+
+        k_all = torch.stack(k_list, dim=0)
+        v_all = torch.stack(v_list, dim=0)
+
+        print(f'read cache from kv_blocks')
+        print(f'k shape is {k_all.shape}')
+        print(f'v shape is {v_all.shape}')
+        return k_all, v_all
+
     def forward(
         self,
         q: torch.Tensor,
@@ -75,21 +126,27 @@ class Attention(nn.Module):
         Returns:
             output: (num_tokens, num_heads, head_dim)
         """
-        # num_tokens = q.size(0)
+        ctx = get_context()
 
+        num_new_tokens = k.size(0)
+        self._write_to_cache(k, v, ctx, num_new_tokens)
+        
         # initialize cache on first use
-        if self.k_cache is None:
-            # this is prefill step
-            self._init_cache(k.device, k.dtype)
+        # if self.k_cache is None:
+        #     # this is prefill step
+        #     self._init_cache(k.device, k.dtype)
 
-        is_prefill = (self.num_cached_tokens == 0)
-
-        if is_prefill:
-            k_for_attn, v_for_attn = self._prefill(k, v)
+        if ctx.is_prefill:
+            k_for_attn, v_for_attn = k, v
         else:
-            k_for_attn, v_for_attn = self._decode(k, v)
+            k_for_attn, v_for_attn = self._read_from_cache(ctx, ctx.slot_idx + num_new_tokens)
 
-        output = self._scaled_dot_product_attention(q, k_for_attn, v_for_attn)
+        # if is_prefill:
+        #     k_for_attn, v_for_attn = self._prefill(k, v)
+        # else:
+        #     k_for_attn, v_for_attn = self._decode(k, v)
+
+        output = self._scaled_dot_product_attention(q, k_for_attn, v_for_attn, causal_mask)
 
         return output
     
