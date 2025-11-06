@@ -7,7 +7,7 @@ class BlockManager:
         self,
         num_blocks: int,
         block_size: int,
-        config: Qwen3Config
+        # config: Qwen3Config
     ):
         self.num_blocks = num_blocks
         self.block_size = block_size
