@@ -45,10 +45,11 @@ class Scheduler:
             # blocks_needed = seq.get_num_logical_blocks(tokens_after_decode)
             # blocks_has = len(seq.block_table)
 
+            # TODO: introduce "token budget" and remove the below look ahead tokens calculation
             tokens_after_decode = seq.num_tokens + 1
             blocks_needed = (tokens_after_decode + self.block_size - 1) // self.block_size
             blocks_has = len(seq.block_table)
-            
+
             # print(f'{blocks_needed} blocks needed for sequence with total tokens {seq.num_tokens}')
             # print(f'currently {blocks_has} blocks are allocated for sequence with total tokens {seq.num_tokens}')
             if blocks_needed > blocks_has:

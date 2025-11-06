@@ -86,7 +86,7 @@ class LLMEngine:
         assert len(scheduled) == 1, "phase1 supports only single sequence"
         
         seq = scheduled[0]
-        is_prefill = len(seq.output_tokens) == 0
+        is_prefill = len(seq.output_tokens) == 0 # maybe get this from context var
 
         # run the model
         next_token = self.model_runner.run([seq], is_prefill)

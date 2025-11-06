@@ -8,9 +8,13 @@ class CacheContext:
     global context for kv cache during forward pass
     """
     kv_blocks: list[torch.Tensor]  # blocks from block manager
-    slot_idx: int
+    # slot_idx: int
     layer_idx: int
     is_prefill: bool
+    slot_mapping: torch.Tensor | None = None # holds slot write positions
+    block_table: torch.Tensor | None = None
+    context_len: int | None = None
+    block_size: int = 16
 
 _cache_context: ContextVar[CacheContext | None] = ContextVar('CacheContext', default=None)
 
