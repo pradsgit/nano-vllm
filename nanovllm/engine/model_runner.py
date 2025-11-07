@@ -62,6 +62,22 @@ class ModelRunner:
             torch.tensor(input_ids, dtype=torch.long, pin_memory=True, device='cuda'),
             torch.tensor(positions, dtype=torch.long, pin_memory=True, device='cuda')
         )
+
+    def _prepare_inputs_for_prefill(
+        self,
+        seqs: list[Sequence],
+    ):
+        """
+        for each sequence, build a "super sequence", global context and return input_ids and positions
+        """
+        raise NotImplementedError
+    
+    def _prepare_inputs_for_decode(
+        self,
+        seqs: list[Sequence],
+    ):
+        raise NotImplementedError
+        
     
     def get_slot_mapping(
         self,

@@ -4,19 +4,15 @@ from collections import deque
 from nanovllm.config import Config
 
 class Scheduler:
-    """A scheduler handles sequnece lifecycles"""
+    """A scheduler handles sequence lifecycle"""
     def __init__(
         self,
         config: Config
-        # block_size: int,
-        # block_manager: BlockManager
     ):
         self.block_size = config.kvcache_block_size
         self.block_manager = BlockManager(config.num_kvcache_blocks, config.kvcache_block_size)
-        # TODO: change to deque
-        self.waiting: list[Sequence] = []
-        # TODO: change to deque
-        self.running: list[Sequence] = []
+        self.waiting: deque[Sequence] = []
+        self.running: deque[Sequence] = []
 
     def add(self, seq: Sequence) -> None:
         """add a new seq to waiting queue"""
@@ -71,7 +67,7 @@ class Scheduler:
         
         # Step 2: No running sequence, try to start one from waiting
         if self.waiting:
-            seq = self.waiting.pop(0)
+            seq = self.waiting.popleft() # gets first item in deque
             blocks_needed = seq.get_num_logical_blocks(self.block_size)
             
             if self.block_manager.can_allocate(blocks_needed):
@@ -89,7 +85,7 @@ class Scheduler:
                 return [seq], 1  # num_prefill = 1
             else:
                 # Can't allocate, put back in waiting
-                self.waiting.insert(0, seq)
+                self.waiting.appendleft(seq)
                 return [], 0
         
         return [], 0
@@ -134,39 +130,59 @@ class Scheduler:
 
         
         # step2: try to schedule waiting sequences, prefill phase
-        for seq in self.waiting[:]:
-            # check how many blocks are needed for this seq's prefill phase
+
+        while self.waiting:
+            seq = self.waiting[0]
             blocks_needed = seq.get_num_logical_blocks(self.block_size)
 
             if self.block_manager.can_allocate(blocks_needed):
                 allocated_blocks = self.block_manager.allocate(blocks_needed)
                 seq.block_table = allocated_blocks
-
-                # move WAITING -> RUNNING
                 seq.status = SequenceStatus.RUNNING
-                self.waiting.remove(seq)
+                self.waiting.popleft()
                 self.running.append(seq)
 
                 scheduled_seqs.append(seq)
                 num_prefill += 1
 
             else:
-                # no blocks are available
                 break
+
+        # for seq in self.waiting[:]:
+        #     # check how many blocks are needed for this seq's prefill phase
+        #     blocks_needed = seq.get_num_logical_blocks(self.block_size)
+
+        #     if self.block_manager.can_allocate(blocks_needed):
+        #         allocated_blocks = self.block_manager.allocate(blocks_needed)
+        #         seq.block_table = allocated_blocks
+
+        #         # move WAITING -> RUNNING
+        #         seq.status = SequenceStatus.RUNNING
+        #         self.waiting.remove(seq) # this is slow
+        #         self.running.append(seq)
+
+        #         scheduled_seqs.append(seq)
+        #         num_prefill += 1
+
+        #     else:
+        #         # no blocks are available
+        #         break
 
         return scheduled_seqs, num_prefill
     
     def free_finished(self):
         """Free blocks from finished sequences and remove from running queue."""
         finished_seqs = []
+        still_running = []
         
-        for seq in self.running[:]:
+        for seq in self.running:
             if seq.is_finished:
                 # Free blocks using BlockManager
                 self.block_manager.free_sequence(seq.id)
                 seq.block_table = []  # Clear the block table
-                
-                self.running.remove(seq)
                 finished_seqs.append(seq)
+            else:
+                still_running.append(seq)
         
+        self.running = still_running
         return finished_seqs
