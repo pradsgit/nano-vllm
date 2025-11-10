@@ -22,8 +22,6 @@ class LLMEngine:
         config_kwargs = {k: v for k, v in kwargs.items() if k in config_fields}
         config = Config(model, **config_kwargs)
 
-        # block_size = config.kvcache_block_size
-
         self.scheduler = Scheduler(config)
         self.model_runner = ModelRunner(config)
         self.sampler = Sampler()
@@ -79,32 +77,23 @@ class LLMEngine:
         executes one generation step
         """
         # schedule the sequences to run
-        scheduled, num_prefill = self.scheduler.schedule()
+        running_seqs, num_prefill = self.scheduler.schedule()
 
-        if not scheduled:
+        if not running_seqs:
             return {}
-        assert len(scheduled) == 1, "phase1 supports only single sequence"
+        assert len(running_seqs) == 1, "phase1 supports only single sequence"
         
-        seq = scheduled[0]
+        seq = running_seqs[0]
         is_prefill = len(seq.output_tokens) == 0 # maybe get this from context var
 
         # run the model
         next_token = self.model_runner.run([seq], is_prefill)
 
-        # if is_prefill:
-        #     # Take last position's logits
-        #     last_logit = logits[-1:, :]  # (1, vocab_size)
-        # else:
-        #     # decode already returns single logit
-        #     last_logit = logits  # (1, vocab_size)
-
-        # temperature = torch.tensor(
-        #     [seq.sampling_params.temperature],
-        #     dtype=torch.float32,
-        #     device=logits.device,
-        # )
-        # next_token_tensor = self.sampler(last_logit, temperature)
-        # next_token = next_token_tensor.item()
+        if is_prefill:
+            # we saved prompt_tokens number of tokens in cache
+            seq.num_cached_tokens = len(seq.prompt_tokens)
+        else:
+            seq.num_cached_tokens += 1 # we only cached one token
 
         # update sequence
         seq.add_token(next_token)

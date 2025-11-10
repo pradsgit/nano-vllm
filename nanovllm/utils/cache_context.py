@@ -7,11 +7,9 @@ class CacheContext:
     """
     global context for kv cache during forward pass
     """
-    kv_blocks: list[torch.Tensor]  # blocks from block manager
-    # slot_idx: int
     layer_idx: int
     is_prefill: bool
-    slot_mapping: torch.Tensor | None = None # holds slot write positions
+    slot_mapping: torch.Tensor | None = None #  tells you exactly which physical positions in the flattened KV cache buffer to write the newly computed key/value vectors for the tokens being processed in the current forward pass.
     block_table: torch.Tensor | None = None
     context_len: int | None = None
     block_size: int = 16

@@ -17,7 +17,7 @@ class Scheduler:
     def add(self, seq: Sequence) -> None:
         """add a new seq to waiting queue"""
         seq.status = SequenceStatus.WAITING
-        self.waiting.append(seq)
+        self.waiting.appendleft(seq)
 
     def is_finished(self):
         return not self.waiting or self.running
@@ -41,13 +41,11 @@ class Scheduler:
             # blocks_needed = seq.get_num_logical_blocks(tokens_after_decode)
             # blocks_has = len(seq.block_table)
 
-            # TODO: introduce "token budget" and remove the below look ahead tokens calculation
-            tokens_after_decode = seq.num_tokens + 1
-            blocks_needed = (tokens_after_decode + self.block_size - 1) // self.block_size
+            # check if sufficient blocks are allocated for this decode step
+            future_cache_size = seq.num_cached_tokens + 1
+            blocks_needed = (future_cache_size + self.block_size - 1) // self.block_size
             blocks_has = len(seq.block_table)
 
-            # print(f'{blocks_needed} blocks needed for sequence with total tokens {seq.num_tokens}')
-            # print(f'currently {blocks_has} blocks are allocated for sequence with total tokens {seq.num_tokens}')
             if blocks_needed > blocks_has:
                 # Need to allocate more blocks
                 additional_blocks = blocks_needed - blocks_has
@@ -58,9 +56,9 @@ class Scheduler:
                         seq.id, 
                         additional_blocks
                     )
-                    seq.block_table.extend(allocated)  # ← Extend, not replace
+                    seq.block_table.extend(allocated)  # extend, not replace
                 else:
-                    # Can't allocate, can't run
+                    # can't allocate, can't run
                     return [], 0
             
             return [seq], 0  # num_prefill = 0 (decode mode)
@@ -76,8 +74,7 @@ class Scheduler:
                     seq.id, 
                     blocks_needed
                 )
-                seq.block_table = allocated  # ← Store block IDs
-                
+                seq.block_table = allocated  # store allocated block IDs
                 # Move to running
                 seq.status = SequenceStatus.RUNNING
                 self.running.append(seq)

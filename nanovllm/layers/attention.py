@@ -34,14 +34,12 @@ class Attention(nn.Module):
         # simple contiguous cache structures
         self.k_cache: torch.Tensor | None = None
         self.v_cache: torch.Tensor | None = None
-        # self.num_cached_tokens = 0
 
     def _write_to_cache(
         self,
         k: torch.Tensor,
         v: torch.Tensor,
         ctx: CacheContext,
-        # num_tokens: int,
     ):
         """
         write k, v into kv_blocks at current layer's slice
@@ -49,7 +47,9 @@ class Attention(nn.Module):
         slot_mapping = ctx.slot_mapping # (num_tokens, )
 
         # vectorized write - no loop needed
-        self.k_cache[slot_mapping] = k
+        # self.k_cache and self.v_cache are just views of self.kv_cache storage object created in model_runner
+        # so we are essentially writing to storage of self.kv_cache
+        self.k_cache[slot_mapping] = k 
         self.v_cache[slot_mapping] = v
 
     def _read_from_cache(self, ctx: CacheContext):
@@ -103,31 +103,6 @@ class Attention(nn.Module):
         
         return torch.tensor(slots, dtype=torch.long, device='cuda')
 
-
-    def _read_from_cache_old(self, ctx: CacheContext, total_tokens: int):
-        """
-        read all k,v cached blocks for this current layer
-        """
-        kv_blocks = ctx.kv_blocks 
-        # eg: kv_blocks is list of tensors eg: [tensor, tensor] 
-        # each tensor in the list is of shape: (2, num_hidden_layers, block_size, num_kv_heads, head_dim)
-        layer_idx = ctx.layer_idx
-        block_size = kv_blocks[0].size(2) 
-
-        k_list, v_list = [], []
-
-        for i in range(total_tokens):
-            block_num = i // block_size
-            pos_in_block = i % block_size
-
-            k_list.append(kv_blocks[block_num][0, layer_idx, pos_in_block])
-            v_list.append(kv_blocks[block_num][1, layer_idx, pos_in_block])
-
-        k_all = torch.stack(k_list, dim=0)
-        v_all = torch.stack(v_list, dim=0)
-
-        return k_all, v_all
-
     def forward(
         self,
         q: torch.Tensor,
@@ -146,58 +121,20 @@ class Attention(nn.Module):
             output: (num_tokens, num_heads, head_dim)
         """
         ctx = get_context()
-
-        num_new_tokens = k.size(0)
-        self._write_to_cache(k, v, ctx)
-
+        
         if ctx.is_prefill:
+            self._write_to_cache(k, v, ctx)
             k_for_attn, v_for_attn = k, v
         else:
-            k_for_attn, v_for_attn = self._read_from_cache(ctx)
+            # can be optimized
+            k_past, v_past = self._read_from_cache(ctx)
+            k_for_attn = torch.cat([k_past, k], dim=0)
+            v_for_attn = torch.cat([v_past, v], dim=0)
+            self._write_to_cache(k, v, ctx)
 
         output = self._scaled_dot_product_attention(q, k_for_attn, v_for_attn, causal_mask)
 
         return output
-    
-    def _prefill(
-        self, 
-        k: torch.Tensor, 
-        v: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """
-        prefill: store all prompt tokens in cache.
-        
-        returns:
-            k_for_attn, v_for_attn: same as input (all new tokens)
-        """
-        num_tokens = k.size(0)
-        # initial filling of k_cache and v_cache
-        self.k_cache[:num_tokens] = k
-        self.v_cache[:num_tokens] = v
-        self.num_cached_tokens = num_tokens
-
-        return k, v
-    
-    def _decode(
-        self,
-        k: torch.Tensor,
-        v: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """
-        decode: Append new token to cache and return all cached.
-        
-        Returns:
-            k_for_attn, v_for_attn: All cached tokens including new one
-        """
-        pos = self.num_cached_tokens
-        self.k_cache[pos] = k.squeeze(0) # remove first dimension cause it is 1 in decode phase
-        self.v_cache[pos] = v.squeeze(0)
-        self.num_cached_tokens += 1
-
-        # return all the tokens k and v
-        k_all = self.k_cache[:self.num_cached_tokens] # k_all is a new tensor view that points to a portion of self.k_cache's storage
-        v_all = self.v_cache[:self.num_cached_tokens]
-        return k_all, v_all
 
     def _scaled_dot_product_attention(
         self,
@@ -236,7 +173,7 @@ class Attention(nn.Module):
                 # this is prefill phase
                 mask = torch.tril(mask)
 
-            # During decode (num_query_tokens == 1): mask is all True
+            # During decode (num_query_tokens == 1): mask is all True cause k and v only include history context not the current token
 
             causal_mask = mask.unsqueeze_(0)
 

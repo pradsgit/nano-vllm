@@ -86,11 +86,11 @@ class RMSNorm(nn.Module):
 
         # add residual if provided
         if residual is not None:
-            x = x.float().add_(residual)
+            x = x.float().add_(residual) # x.float() will create a new tensor if and only if x dtype is not float32
             new_residual = x.to(x_dtype)
 
         # compute rms in float32
-        x = x.float() if residual is None else x
+        x = x if residual is not None else x.float()
         # calculate rms scaling factor 
         rms_factor = torch.rsqrt(x.pow(2).mean(dim=-1, keepdim=True) + self.eps) # (num_tokens, 1)
         x.mul_(rms_factor) # in-place op # (num_tokens, hidden_size)

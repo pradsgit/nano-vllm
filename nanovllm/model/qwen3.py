@@ -85,7 +85,6 @@ class Qwen3Attention(nn.Module):
         q, k = self.rope(positions, q, k)
 
         # apply Grouped Query Attention
-        # attention with KV caching
         # Input: (num_tokens, num_heads, head_dim)
         # Output: (num_tokens, num_heads, head_dim)
         attn_output = self.attention(q, k, v) # attn_ouptut might not be contiguous
@@ -190,15 +189,13 @@ class Qwen3Model(nn.Module):
         config: Qwen3Config,
     ):
         super().__init__()
-        # print(config)
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
         self.layers = nn.ModuleList([Qwen3DecoderLayer(config) for _ in range(config.num_hidden_layers)])
-        # final norm
         self.norm = RMSNorm(config.hidden_size, config.rms_norm_eps)
 
     def forward(
         self, 
-        input_ids: torch.Tensor, # 
+        input_ids: torch.Tensor,
         positions: torch.Tensor,
     ):
         from nanovllm.utils.cache_context import get_context

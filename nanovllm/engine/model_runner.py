@@ -55,8 +55,6 @@ class ModelRunner:
 
             input_ids.extend(tokens)
             positions.extend(pos)
-
-        # convert to tensors
         # pin_memory=True speeds up cpu-to-gpu movement
         return (
             torch.tensor(input_ids, dtype=torch.long, pin_memory=True, device='cuda'),
@@ -100,7 +98,7 @@ class ModelRunner:
         
         slots = []
         for logical_pos in range(start_pos, end_pos):
-            block_idx = logical_pos // block_size
+            block_idx = logical_pos // block_size # this gives relevant block id pos from block_ids list
             pos_in_block = logical_pos % block_size
             physical_block_id = block_ids[block_idx]
             slot = physical_block_id * block_size + pos_in_block
@@ -160,15 +158,7 @@ class ModelRunner:
         input_ids, positions = self._prepare_inputs(seqs, is_prefill)
 
         seq = seqs[0]
-
-        # get relevant kv_blocks from self.kv_cache and save it to cache_context
-        # kv_blocks = [
-        #     self.kv_cache[:, :, id, :, :, :] # slice for each block
-        #     for id in block_ids
-        # ]
-
         # get slot mappings for currently processing token positions
-
         if is_prefill:
             slot_mapping = self.get_slot_mapping(
                 seq.block_table,
@@ -178,22 +168,21 @@ class ModelRunner:
             )
         else:
             # at decode time, we are processing the token at last position of sequnece
-            current_pos = seq.num_tokens - 1
+            current_pos = seq.num_cached_tokens
             slot_mapping = self.get_slot_mapping(
                 seq.block_table,
-                start_pos=current_pos, # this is a position argument that's why '-1'
+                start_pos=current_pos,
                 end_pos=current_pos + 1,
                 block_size=self.block_size
             )
 
         # create context with sliced blocks
         cache_ctx = CacheContext(
-            kv_blocks=[],
             slot_mapping=slot_mapping,
             is_prefill=is_prefill,
             layer_idx=-1,
             block_table=seq.block_table,
-            context_len=seq.num_tokens,
+            context_len=seq.num_cached_tokens,
             block_size=self.block_size
         )
 
@@ -208,7 +197,7 @@ class ModelRunner:
 
         # run sampling to get the tokens
         temperature = torch.tensor(
-            [seqs[0].sampling_params.temperature],
+            [seq.sampling_params.temperature],
             dtype=torch.float32,
             device=logits.device,
         )

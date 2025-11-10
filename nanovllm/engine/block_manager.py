@@ -7,26 +7,9 @@ class BlockManager:
         self,
         num_blocks: int,
         block_size: int,
-        # config: Qwen3Config
     ):
         self.num_blocks = num_blocks
         self.block_size = block_size
-
-        # initialize block pool where each block is an actual tensor living in GPU memory!
-        # self.gpu_blocks = []
-
-        # for i in range(num_blocks):
-        #     block = torch.empty(
-        #         2, # for k and v
-        #         config.num_hidden_layers, 
-        #         block_size, 
-        #         config.num_key_value_heads, 
-        #         config.head_dim, 
-        #         dtype=torch.float16, 
-        #         device='cuda'
-        #     ) 
-        #     self.gpu_blocks.append(block)
-
         # track free blocks
         self.free_block_ids = deque(range(num_blocks))
         # track which blocks belong to which sequence (seq -> block_ids mapping) 
@@ -39,7 +22,7 @@ class BlockManager:
         
         allocated = []
 
-        for i in range(num_blocks):
+        for _ in range(num_blocks):
             block = self.free_block_ids.popleft()
             allocated.append(block)
 

@@ -12,12 +12,12 @@ class Sequence:
     counter = count()
 
     def __init__(self, prompt_tokens: list[int], sampling_params: SamplingParams):
-        # how should we maintain id? a simple counter? or string?
         self.id = f'seq_{next(Sequence.counter)}'
         self.status = SequenceStatus.WAITING
 
         self.prompt_tokens = prompt_tokens.copy()
         self.output_tokens = []
+        self.num_cached_tokens = 0 # num tokens with saved kv_cache
 
         # memory management for PagedAttention
         self.block_table = [] # this stores allocated block_ids
