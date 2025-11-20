@@ -26,18 +26,15 @@ class Qwen3Attention(nn.Module):
         self.num_kv_heads = num_kv_heads
         self.head_dim = head_dim or hidden_size // self.num_heads
 
-        # Never assume num_heads * head_dim = hidden_size
-
         self.q_size = self.num_heads * self.head_dim
         self.kv_size = self.num_kv_heads * self.head_dim
 
-        self.q_proj = nn.Linear(self.hidden_size, self.num_heads * self.head_dim, bias=qkv_bias)
+        # never assume num_heads * head_dim = hidden_size
+        self.q_proj = nn.Linear(hidden_size, self.q_size, bias=qkv_bias)
         self.k_proj = nn.Linear(hidden_size, self.kv_size, bias=qkv_bias)
         self.v_proj = nn.Linear(hidden_size, self.kv_size, bias=qkv_bias)
-        self.o_proj = nn.Linear(self.num_heads * self.head_dim, hidden_size, bias=qkv_bias)
 
-        self.q_norm = RMSNorm(self.head_dim, rms_norm_eps)
-        self.k_norm = RMSNorm(self.head_dim, rms_norm_eps)
+        self.o_proj = nn.Linear(self.num_heads * self.head_dim, hidden_size, bias=qkv_bias)
 
         self.rope = get_rope(
             self.head_dim,
@@ -47,35 +44,26 @@ class Qwen3Attention(nn.Module):
             rope_scaling=rope_scaling,
         )
 
+        self.q_norm = RMSNorm(self.head_dim, rms_norm_eps)
+        self.k_norm = RMSNorm(self.head_dim, rms_norm_eps)
+
         self.self_attn_scale = self.head_dim ** -0.5
         self.attention = Attention(num_heads, self.head_dim, num_kv_heads, self.self_attn_scale, max_position)
 
     def forward(
         self,
-        x: torch.Tensor, # (num_tokens, hidden_size)
-        positions: torch.Tensor, # (num_tokens, ) - position indices
-    ): 
+        x: torch.Tensor, # (batch_size, num_tokens, hidden_size)
+        positions: torch.Tensor, # (batch_size, num_tokens) - position indices
+    ):
         # shape of x is (seq_len, hidden_size) phase1: considers only one sequence
         num_tokens, hidden_size = x.size()
         assert self.hidden_size == hidden_size
 
         # project x to qkv
         #TODO: may be transpose(1, 2) here to get shape (num_heads, num_tokens, head_dim)
-        q = self.q_proj(x).view(-1, self.num_heads, self.head_dim) # (num_tokens, num_heads, head_dim)
+        q = self.q_proj(x).view(-1, self.num_heads, self.head_dim)
         k = self.k_proj(x).view(-1, self.num_kv_heads, self.head_dim)
         v = self.v_proj(x).view(-1, self.num_kv_heads, self.head_dim)
-
-        # k = (
-        #     self.k_proj(x)
-        #     .view(-1, 2, self.num_kv_heads, self.head_dim)
-        #     .permute(1, 0, 2, 3)
-        # )
-        # v = (
-        #     self.v_proj(x)
-        #     .view(-1, 2, self.num_kv_heads, self.head_dim)
-        #     .permute(1, 0, 2, 3)
-        # )
-        # k, v = kv.unbind(0)
 
         # apply qk-norm
         q = self.q_norm(q)
@@ -85,17 +73,18 @@ class Qwen3Attention(nn.Module):
         q, k = self.rope(positions, q, k)
 
         # apply Grouped Query Attention
+        # attention with KV caching
         # Input: (num_tokens, num_heads, head_dim)
         # Output: (num_tokens, num_heads, head_dim)
-        attn_output = self.attention(q, k, v) # attn_ouptut might not be contiguous
+        attn_output = self.attention(q, k, v)
 
         # flatten heads back
         # (num_tokens, num_heads, head_dim) -> (num_tokens, num_heads * head_dim)
-        attn_output = attn_output.reshape(-1, self.q_size) # using .reshape() cause attn_output might be non-contiguous
+        attn_output = attn_output.reshape(-1, self.q_size)
 
         output = self.o_proj(attn_output)
 
-        return output   
+        return output
     
 class Qwen3MLP(nn.Module):
     def __init__(

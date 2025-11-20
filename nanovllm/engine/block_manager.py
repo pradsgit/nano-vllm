@@ -12,14 +12,14 @@ class BlockManager:
         self.block_size = block_size
         # track free blocks
         self.free_block_ids = deque(range(num_blocks))
-        # track which blocks belong to which sequence (seq -> block_ids mapping) 
+        # track which blocks belong to which sequence (seq -> block_ids mapping)
         self.seq_to_blocks: dict[str, list[int]] = {}
 
     def allocate_sequence(self, seq_id: str, num_blocks: int) -> list[int]:
         """allocates blocks for a sequence and tracks them"""
         if not self.can_allocate(num_blocks):
             raise ValueError(f"Cannot allocate {num_blocks}")
-        
+
         allocated = []
 
         for _ in range(num_blocks):
@@ -35,6 +35,9 @@ class BlockManager:
         return allocated
 
     def can_allocate(self, num_blocks: int) -> bool:
+
+        # print(f'free_blocks in block manager: {len(self.free_block_ids)}')
+        # print(f'num blocks requested: {num_blocks}')
         return len(self.free_block_ids) >= num_blocks
 
     def allocate(self, num_blocks: int) -> list[int]:
@@ -42,7 +45,7 @@ class BlockManager:
         # check if num_blocks are available?
         if not self.can_allocate(num_blocks):
             raise ValueError(f"Cannot allocate {num_blocks}, only {len(self.free_block_ids)} free")
-        
+
         allocated = []
 
         for i in range(num_blocks):

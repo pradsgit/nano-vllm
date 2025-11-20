@@ -6,12 +6,12 @@ import os
 class Config:
     model: str
     max_model_len: int = 4096
-    max_num_seqs: int = 512
+    max_num_seqs: int = 4
     eos: int = None
     hf_config: AutoConfig | None = None
     gpu_memory_utilization: float = 0.9
-    kvcache_block_size: int = 16
-    num_kvcache_blocks: int = -1
+    kvcache_block_size: int = 256
+    num_kvcache_blocks: int = 500
 
     def __post_init__(self):
         # assert os.path.isdir(self.model)
@@ -20,6 +20,6 @@ class Config:
                 self.model,
                 trust_remote_code=True,
             )
-        
+
         if self.eos is None:
             self.eos = getattr(self.hf_config, 'eos_token_id', None)
