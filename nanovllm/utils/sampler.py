@@ -6,8 +6,8 @@ class Sampler:
     """sample next tokens from logits"""
     def __call__(
         self,
-        logits: torch.Tensor, # (num_tokens, vocab_size)
-        temperatures: torch.Tensor,
+        logits: torch.Tensor, # (num_seqs, vocab_size)
+        temperatures: torch.Tensor, # (num_seqs, )
         # sampling_params: SamplingParams
     ) -> list[int]:
 
@@ -31,5 +31,5 @@ class Sampler:
             print(f"Probs NaN: {torch.isnan(probs).sum()}")
             print(f"Probs Inf: {torch.isinf(probs).sum()}")
 
-        next_tokens = torch.multinomial(probs, num_samples=1).squeeze_(-1)
+        next_tokens = torch.multinomial(probs, num_samples=1).squeeze_(-1) # next_tokens shape: (num_seqs, 1) after squeezing last dim (num_seqs, )
         return next_tokens

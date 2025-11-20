@@ -33,7 +33,7 @@ class ModelRunner:
         print('move model to GPU')
         self.model = self.model.cuda()
         self.model.eval()
-        self.init_kv_cache()
+        self._init_kv_cache()
 
 
     def _prepare_inputs(
@@ -53,15 +53,13 @@ class ModelRunner:
         max_seqlen_q = 0
         max_seqlen_k = 0
 
-        # there is no prefill/decode separation. seqs might contain prefill and decode requests
-
         for seq in seqs:
             # if seq is prefill stage
             seqlen = len(seq)
             if seq.is_prefill:
                 input_ids.extend(seq.prompt_tokens)
                 positions.extend(list(range(len(seq.prompt_tokens))))
-                # get slot mapping for currently processing token
+                # get slot mapping for currently processing tokens
                 slots = self.get_slot_mapping(
                     seq.block_table,
                     start_pos=0,
@@ -117,7 +115,6 @@ class ModelRunner:
         block_tables = [seq.block_table + [-1] * (max_len-len(seq.block_table)) for seq in seqs]
         return torch.tensor(block_tables, dtype=torch.int32, pin_memory=True).cuda(non_blocking=True)
 
-
     def get_slot_mapping(
         self,
         block_ids: list[int],
@@ -148,7 +145,7 @@ class ModelRunner:
         return torch.tensor(slots, dtype=torch.long, device='cuda')
 
 
-    def init_kv_cache(self):
+    def _init_kv_cache(self):
         """
         allocate, reshape and bind KV cache tensors to attention layers
         """
@@ -203,9 +200,9 @@ class ModelRunner:
 
         ctx = get_context()
 
-        logits = self.run_model(input_ids, positions)
+        logits = self.run_model(input_ids, positions) # logits shape: (num_tokens, vocab_size)
 
-        token_positions = ctx.cu_seqlens_q[1:] - 1 # get last token of each sequence
+        token_positions = ctx.cu_seqlens_q[1:] - 1 # get last token at each sequence ending position boundary 
         logits_sampling = logits[token_positions] # (num_seqs, vocab_size)
 
         # run sampling to get the tokens

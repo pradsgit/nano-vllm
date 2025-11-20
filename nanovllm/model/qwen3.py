@@ -52,15 +52,13 @@ class Qwen3Attention(nn.Module):
 
     def forward(
         self,
-        x: torch.Tensor, # (batch_size, num_tokens, hidden_size)
-        positions: torch.Tensor, # (batch_size, num_tokens) - position indices
+        x: torch.Tensor, # (num_tokens, hidden_size)
+        positions: torch.Tensor, # (num_tokens, ) - position indices
     ):
-        # shape of x is (seq_len, hidden_size) phase1: considers only one sequence
         num_tokens, hidden_size = x.size()
         assert self.hidden_size == hidden_size
 
         # project x to qkv
-        #TODO: may be transpose(1, 2) here to get shape (num_heads, num_tokens, head_dim)
         q = self.q_proj(x).view(-1, self.num_heads, self.head_dim)
         k = self.k_proj(x).view(-1, self.num_kv_heads, self.head_dim)
         v = self.v_proj(x).view(-1, self.num_kv_heads, self.head_dim)
@@ -72,8 +70,6 @@ class Qwen3Attention(nn.Module):
         # apply rope to q and k
         q, k = self.rope(positions, q, k)
 
-        # apply Grouped Query Attention
-        # attention with KV caching
         # Input: (num_tokens, num_heads, head_dim)
         # Output: (num_tokens, num_heads, head_dim)
         attn_output = self.attention(q, k, v)
@@ -224,7 +220,6 @@ class Qwen3ForCausalLM(nn.Module):
     ) -> torch.Tensor:
         
         hidden_states = self.model(input_ids, positions)
-        # Compute logits
         logits = self.lm_head(hidden_states)
         
         return logits

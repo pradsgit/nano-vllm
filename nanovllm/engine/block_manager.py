@@ -35,9 +35,6 @@ class BlockManager:
         return allocated
 
     def can_allocate(self, num_blocks: int) -> bool:
-
-        # print(f'free_blocks in block manager: {len(self.free_block_ids)}')
-        # print(f'num blocks requested: {num_blocks}')
         return len(self.free_block_ids) >= num_blocks
 
     def allocate(self, num_blocks: int) -> list[int]:
@@ -70,3 +67,5 @@ class BlockManager:
             block_ids = self.seq_to_blocks.pop(seq_id)
             for block_id in block_ids:
                 self.free_block_ids.append(block_id)
+            # remove seq_id entry
+            del self.seq_to_blocks[seq_id]

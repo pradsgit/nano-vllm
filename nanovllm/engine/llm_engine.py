@@ -73,40 +73,24 @@ class LLMEngine:
 
     def step(self):
         """
-        executes one generation step
+        schedule, run and extract output for one generation step
         """
         # schedule the sequences to run
         running_seqs, is_prefill = self.scheduler.schedule()
 
         if not running_seqs:
             return ValueError('No sequences to process for this step')
-
+        
         # run the model
         next_tokens = self.model_runner.run(running_seqs, is_prefill)
-
         assert len(running_seqs) == len(next_tokens)
+        self.scheduler.update_from_output(running_seqs, token_ids=next_tokens)
 
-        output = []
-
-        for seq, token in zip(running_seqs, next_tokens):
-
-            if seq.is_prefill:
-                # we saved prompt_tokens number of tokens in cache
-                seq.num_cached_tokens = len(seq.prompt_tokens)
-            else:
-                seq.num_cached_tokens += 1 # we only cached one token
-
-            # update sequence
-            seq.add_token(token)
-
-            # check if finsihed
-            if self._is_finished(seq):
-                seq.status = SequenceStatus.FINISHED
-
-            output.append((seq.id, seq.prompt_tokens.copy() + seq.output_tokens.copy()))
-
-        # handle finished sequences
-        self.scheduler.free_finished()
+        # make output
+        output = [
+            (seq.id, seq.prompt_tokens.copy() + seq.output_tokens.copy())
+            for seq in running_seqs
+        ]
         
         return output, 1
 

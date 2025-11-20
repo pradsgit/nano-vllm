@@ -11,6 +11,7 @@ class Scheduler:
     ):
         self.max_num_seqs = config.max_num_seqs
         self.block_size = config.kvcache_block_size
+        self.eos = config.eos
         self.block_manager = BlockManager(config.num_kvcache_blocks, config.kvcache_block_size)
         self.waiting: deque[Sequence] = deque()
         self.running: deque[Sequence] = deque()
@@ -29,7 +30,7 @@ class Scheduler:
         num_seqs = 0
 
         # first schedule RUNNING seqs
-        running_seqs = []  # Separate list for running
+        running_seqs = []
         while self.running and num_seqs < self.max_num_seqs:
             seq = self.running.popleft()
             if seq.is_finished:
@@ -87,6 +88,9 @@ class Scheduler:
         finished_seqs = []
         still_running = []
 
+        if not any(seq.is_finished for seq in self.running):
+            return 
+        
         for seq in self.running:
             if seq.is_finished:
                 self.block_manager.free_sequence(seq.id)
@@ -100,3 +104,25 @@ class Scheduler:
         self.running.extend(still_running)
         
         return finished_seqs
+    
+    def update_from_output(
+        self,
+        seqs: list[Sequence],
+        token_ids: list[int],
+    ):
+        for seq, token_id in zip(seqs, token_ids):
+            if seq.is_prefill:
+                # we saved prompt_tokens number of tokens in cache
+                seq.num_cached_tokens = len(seq.prompt_tokens)
+            else:
+                seq.num_cached_tokens += 1 # we only cached one token
+            seq.add_token(token_id)
+            # check if seq is finished
+            # 1. max tokens reached or eos token emitted
+            if len(seq.output_tokens) >= seq.sampling_params.max_tokens or token_id == self.eos:
+                seq.status = SequenceStatus.FINISHED
+
+        # handle finished sequences
+        self.free_finished()
+
+                
