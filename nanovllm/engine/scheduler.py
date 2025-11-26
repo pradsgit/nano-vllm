@@ -36,24 +36,30 @@ class Scheduler:
             if seq.is_finished:
                 continue  # Don't add finished seqs back
 
-            # block manager allocation logic
-            future_cache_size = seq.num_cached_tokens + 1
-            blocks_needed = (future_cache_size + self.block_size - 1) // self.block_size # math.ceil div
-            blocks_has = len(seq.block_table)
+            try:
+                self.block_manager.append_slots(seq)
+            except ValueError as e:
+                print(f'Cannot allocate block for seq {seq.seq_id}: {e}')
+                #TODO: handle preemption
+                continue
+            # # block manager allocation logic
+            # future_cache_size = seq.num_cached_tokens + 1
+            # blocks_needed = (future_cache_size + self.block_size - 1) // self.block_size # math.ceil div
+            # blocks_has = len(seq.block_table)
 
-            if blocks_needed > blocks_has:
-                additional_blocks = blocks_needed - blocks_has
-                if self.block_manager.can_allocate(additional_blocks):
-                    allocated = self.block_manager.allocate_sequence(
-                        seq.id,
-                        additional_blocks
-                    )
-                    seq.block_table.extend(allocated)
-                else:
-                    # Can't allocate, skip this seq for now
-                    # Add back to waiting? Or handle preemption?
-                    print('cant allocate block')
-                    continue
+            # if blocks_needed > blocks_has:
+            #     additional_blocks = blocks_needed - blocks_has
+            #     if self.block_manager.can_allocate(additional_blocks):
+            #         allocated = self.block_manager.allocate_sequence(
+            #             seq.id,
+            #             additional_blocks
+            #         )
+            #         seq.block_table.extend(allocated)
+            #     else:
+            #         # Can't allocate, skip this seq for now
+            #         # Add back to waiting? Or handle preemption?
+            #         print('cant allocate block')
+            #         continue
 
             running_seqs.append(seq)
             num_seqs += 1
@@ -66,20 +72,34 @@ class Scheduler:
         while self.waiting and num_seqs < self.max_num_seqs:
             print('waiting seqs found.. adding')
             seq = self.waiting[0]
-            blocks_needed = seq.get_num_logical_blocks(self.block_size)
 
-            if self.block_manager.can_allocate(blocks_needed):
-                allocated_blocks = self.block_manager.allocate(blocks_needed)
-                seq.block_table = allocated_blocks
-                seq.status = SequenceStatus.RUNNING
-                self.waiting.popleft()
-                self.running.append(seq)
+            # check if blocks are already computed for prompt tokens
+            cached_blocks, num_cached_tokens = self.block_manager.get_computed_blocks(seq.prompt_tokens)
 
-                scheduled_seqs.append(seq)
-                num_prefill += 1
-                num_seqs += 1
-            else:
-                break
+            num_new_tokens = len(seq.prompt_tokens) - num_cached_tokens
+            # calculate blocks needed for tokens that are not cached
+            blocks_needed = (num_new_tokens + self.block_size - 1) // self.block_size
+
+            if not self.block_manager.can_allocate(blocks_needed):
+                print('cannot allocated blocks to this sequence')
+                break  # can't schedule this seq yet
+            
+            # call allocate_slots of block_manager to get the complete block_table
+            allocated_blocks = self.block_manager.allocate_slots(
+                seq=seq,
+                cached_blocks=cached_blocks,
+                num_new_blocks=blocks_needed
+            )
+
+            # update sequence
+            seq.block_table = allocated_blocks
+            seq.status = SequenceStatus.RUNNING
+            self.waiting.popleft()
+            self.running.append(seq)
+
+            scheduled_seqs.append(seq)
+            num_prefill += 1
+            num_seqs += 1
 
         return scheduled_seqs, num_prefill > 0
 
@@ -117,6 +137,10 @@ class Scheduler:
             else:
                 seq.num_cached_tokens += 1 # we only cached one token
             seq.add_token(token_id)
+
+            # Update block manager with the new token and cache if full
+            self.block_manager.update_block_with_token(seq.id, token_id)
+            
             # check if seq is finished
             # 1. max tokens reached or eos token emitted
             if len(seq.output_tokens) >= seq.sampling_params.max_tokens or token_id == self.eos:

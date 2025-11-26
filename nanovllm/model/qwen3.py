@@ -110,7 +110,11 @@ class Qwen3MLP(nn.Module):
         # x = self.act_fn(gate_up) # (num_tokens, intermediate_size)
         # x = self.down_proj(x) # (num_tokens, hidden_size)
 
-        down_proj = self.down_proj(self.act_fn(torch.cat([self.gate_proj(x), self.up_proj(x)], dim=-1)))
+        down_proj = self.down_proj(
+            self.act_fn(
+                torch.cat([self.gate_proj(x), self.up_proj(x)], dim=-1)
+            )
+        )
         return down_proj
 
 class Qwen3DecoderLayer(nn.Module):
