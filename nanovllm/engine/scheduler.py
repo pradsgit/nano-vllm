@@ -42,31 +42,13 @@ class Scheduler:
                 print(f'Cannot allocate block for seq {seq.seq_id}: {e}')
                 #TODO: handle preemption
                 continue
-            # # block manager allocation logic
-            # future_cache_size = seq.num_cached_tokens + 1
-            # blocks_needed = (future_cache_size + self.block_size - 1) // self.block_size # math.ceil div
-            # blocks_has = len(seq.block_table)
-
-            # if blocks_needed > blocks_has:
-            #     additional_blocks = blocks_needed - blocks_has
-            #     if self.block_manager.can_allocate(additional_blocks):
-            #         allocated = self.block_manager.allocate_sequence(
-            #             seq.id,
-            #             additional_blocks
-            #         )
-            #         seq.block_table.extend(allocated)
-            #     else:
-            #         # Can't allocate, skip this seq for now
-            #         # Add back to waiting? Or handle preemption?
-            #         print('cant allocate block')
-            #         continue
 
             running_seqs.append(seq)
             num_seqs += 1
 
         # Add running seqs back to self.running (maintain order)
         self.running.extendleft(reversed(running_seqs))
-        scheduled_seqs.extend(running_seqs)  # Add to scheduled
+        scheduled_seqs.extend(running_seqs)
 
         # step2: try to schedule waiting sequences, prefill phase
         while self.waiting and num_seqs < self.max_num_seqs:

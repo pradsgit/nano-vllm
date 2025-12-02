@@ -37,8 +37,9 @@ class LLMEngine:
         prompt: str,
         sp: SamplingParams,
     ):
-        """add the request to scheduler"""
+        """pass the request to scheduler"""
         if isinstance(prompt, str):
+            # tokenize the prompt if it's not already
             prompt = self.tokenizer.encode(prompt)
 
         seq = Sequence(prompt_tokens=prompt, sampling_params=sp)

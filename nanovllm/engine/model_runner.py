@@ -111,8 +111,9 @@ class ModelRunner:
         return input_ids, positions
 
     def _prepare_block_tables(self, seqs: list[Sequence]):
+        """pad to max length of block tables"""
         max_len = max(len(seq.block_table) for seq in seqs)
-        block_tables = [seq.block_table + [-1] * (max_len-len(seq.block_table)) for seq in seqs]
+        block_tables = [seq.block_table + [-1] * (max_len-len(seq.block_table)) for seq in seqs] # right pad
         return torch.tensor(block_tables, dtype=torch.int32, pin_memory=True).cuda(non_blocking=True)
 
     def get_slot_mapping(
@@ -143,7 +144,6 @@ class ModelRunner:
             slots.append(slot)
 
         return torch.tensor(slots, dtype=torch.long, device='cuda')
-
 
     def _init_kv_cache(self):
         """
@@ -196,6 +196,7 @@ class ModelRunner:
 
     def run(self, seqs: list[Sequence], is_prefill: bool):
         # prepare inputs for prefill and decode phase
+        # here input_ids is a "super sequence". all the sequences are concatenated into a single seq
         input_ids, positions = self._prepare_inputs(seqs)
 
         ctx = get_context()

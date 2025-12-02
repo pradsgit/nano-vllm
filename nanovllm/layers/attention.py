@@ -226,7 +226,7 @@ class Attention(nn.Module):
     ):
         ctx = get_context()
         
-        # store new k,v into cache if initialized
+        # store new k,v into cache, if self.k_cache and self.v_cache are initialized
         if self.k_cache.numel() > 0 and self.v_cache.numel() > 0:
             self.store_kvcache(k, v, ctx.slot_mapping, ctx.block_size)
             # Use cache for attention

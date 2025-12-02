@@ -46,13 +46,10 @@ class BlockManager:
 
         # a list of KVCacheBlock
         self.block_pool: list[KVCacheBlock] = [KVCacheBlock(id=i) for i in range(num_blocks)]
-        self.free_list_head: KVCacheBlock | None # head pointer of block pool
-        self.free_list_tail: KVCacheBlock | None # tail pointer of block pool
+        self.free_block_pool_head: KVCacheBlock | None # head pointer of block pool
+        self.free_block_pool_tail: KVCacheBlock | None # tail pointer of block pool
 
         self._init_block_pool()
-
-        # track free blocks
-        self.free_block_ids = deque(range(num_blocks))
         
         self.cache_blocks: dict[int, int] = dict() # mapping from hash key to block id
         
@@ -93,9 +90,9 @@ class BlockManager:
 
     def get_computed_blocks(self, token_ids: list[int]) -> tuple[list[int], int]:
         """
-        get the computed(cached) blocks for a sequence's token ids
+        get the computed(cached) blocks for a sequence's token ids, if cache hits
         note: computed blocks must be full
-        find longest prefix of blocks that are cached
+        finds the longest prefix of blocks that are cached
 
         returns:
             tuple -> (list of cached block ids, num_cached_tokens)
@@ -105,7 +102,7 @@ class BlockManager:
         num_cached_tokens = 0
         hash = -1
 
-        blocks_needed = (len(token_ids) + self.block_size - 1) // self.block_size
+        blocks_needed = (len(token_ids) + self.block_size - 1) // self.block_size # ceil div
 
         for block_idx in range(blocks_needed):
             start = block_idx * self.block_size
@@ -117,7 +114,7 @@ class BlockManager:
                 break
 
             hash = self.compute_hash(block_tokens, hash)
-            # Check if cached
+            # check if cached
             block_id = self.cache_blocks.get(hash, None)
             if block_id is None:
                 # cache miss, stop here
@@ -189,7 +186,7 @@ class BlockManager:
 
             # no one is currently using this cached data
             if block.ref_count == 0:
-                # Block is in free queue - remove it
+                # block is in free queue - remove it
                 self._remove_from_free_queue(block)
 
             block.ref_count += 1
@@ -210,7 +207,7 @@ class BlockManager:
         all_blocks = cached_blocks + new_blocks
         self.request_blocks[seq.id] = all_blocks
 
-        # should we cache the blocks that are going be full?
+        # assign token ids to new blocks and cache them if they get full
         num_cached = len(cached_blocks) * self.block_size
         start_token_idx = num_cached
         # Get prev_hash from last cached block
@@ -272,10 +269,10 @@ class BlockManager:
         last_block_id = blocks[-1]
         last_block = self.block_pool[last_block_id]
         
-        # Append token
+        # append token
         last_block.token_ids.append(token_id)
         
-        # If block just became full, cache it
+        # if block just became full, cache it
         if len(last_block.token_ids) == self.block_size:
             # Get prev_hash from previous block
             if len(blocks) > 1:
@@ -290,51 +287,8 @@ class BlockManager:
             last_block.hash = hash_value
             self.cache_blocks[hash_value] = last_block_id
 
-    def allocate_sequence(self, seq_id: str, num_blocks: int) -> list[int]:
-        """allocates blocks for a sequence and tracks them"""
-        if not self.can_allocate(num_blocks):
-            raise ValueError(f"Cannot allocate {num_blocks}")
-
-        allocated = []
-
-        for _ in range(num_blocks):
-            block = self.free_block_ids.popleft()
-            allocated.append(block)
-
-        # update the seq -> block_ids mapping
-        if seq_id not in self.seq_to_blocks:
-            self.seq_to_blocks[seq_id] = []
-
-        self.seq_to_blocks[seq_id].extend(allocated)
-
-        return allocated
-
     def can_allocate(self, num_blocks: int) -> bool:
         return len(self.free_block_ids) >= num_blocks
-
-    def allocate(self, num_blocks: int) -> list[int]:
-        """allocates blocks and updates free_block_ids?"""
-        # check if num_blocks are available?
-        if not self.can_allocate(num_blocks):
-            raise ValueError(f"Cannot allocate {num_blocks}, only {len(self.free_block_ids)} free")
-
-        allocated = []
-
-        for i in range(num_blocks):
-            block_id = self.free_block_ids.pop()
-            allocated.append(block_id)
-
-        return allocated
-
-    def free(self, block_ids: list[int]) -> None:
-        """frees blocks with block_ids"""
-        for block_id in block_ids:
-            self.free_block_ids.append(block_id)
-
-    def get_blocks_for_sequence(self, seq_id: str) -> list[torch.Tensor]:
-        """Get actual block tensors for a sequence."""
-        block_ids = self.seq_to_blocks.get(seq_id, [])
-        return [self.gpu_blocks[bid] for bid in block_ids]
 
     def free_sequence(self, seq_id: str) -> None:
         """Free all blocks for a sequence."""
