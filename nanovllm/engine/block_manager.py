@@ -144,8 +144,15 @@ class BlockManager:
 
     def _add_to_free_queue(self, block: KVCacheBlock):
         """add block to the tail of free queue"""
+        assert block.ref_count == 0, \
+            f"Block {block.id} has ref_count={block.ref_count}, expected 0"
+        
+        assert block.prev_free_block is None and block.next_free_block is None, \
+            f"Block {block.id} already linked (prev={block.prev_free_block}, next={block.next_free_block})"
+        
         if self.free_block_pool_tail is None:
             # Empty queue
+            assert self.free_block_pool_head is None, "Tail is None but head exists"
             self.free_block_pool_head = block
             self.free_block_pool_tail = block
             block.prev_free_block = None
