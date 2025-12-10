@@ -57,6 +57,8 @@ class BlockManager:
         self.seq_to_blocks: dict[str, list[int]] = {}
         self.request_blocks: dict[str, list[int]] = {} # mapping from request to block ids
 
+        self.num_free_blocks: int = num_blocks
+
     def _init_block_pool(self):
         """
         update each KVCacheBlock's previous and next pointers
@@ -142,6 +144,8 @@ class BlockManager:
         block.prev_free_block = None
         block.next_free_block = None
 
+        self.num_free_blocks -= 1
+
     def _add_to_free_queue(self, block: KVCacheBlock):
         """add block to the tail of free queue"""
         assert block.ref_count == 0, \
@@ -163,6 +167,8 @@ class BlockManager:
             block.prev_free_block = self.free_block_pool_tail
             block.next_free_block = None
             self.free_block_pool_tail = block
+
+        self.num_free_blocks += 1 
 
     def _pop_from_free_queue(self) -> KVCacheBlock:
         """
@@ -295,7 +301,7 @@ class BlockManager:
             self.cache_blocks[hash_value] = last_block_id
 
     def can_allocate(self, num_blocks: int) -> bool:
-        return len(self.free_block_ids) >= num_blocks
+        return len(self.num_free_blocks) >= num_blocks
 
     def free_sequence(self, seq_id: str) -> None:
         """Free all blocks for a sequence."""

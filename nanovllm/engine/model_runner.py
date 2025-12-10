@@ -57,13 +57,15 @@ class ModelRunner:
             # if seq is prefill stage
             seqlen = len(seq)
             if seq.is_prefill:
-                input_ids.extend(seq.prompt_tokens)
-                positions.extend(list(range(len(seq.prompt_tokens))))
+                start = seq.num_cached_tokens
+                end = seqlen
+                input_ids.extend(seq.prompt_tokens[start:end])
+                positions.extend(list(range(start, end)))
                 # get slot mapping for currently processing tokens
                 slots = self.get_slot_mapping(
                     seq.block_table,
-                    start_pos=0,
-                    end_pos=seqlen,
+                    start_pos=start,
+                    end_pos=end,
                     block_size=self.block_size
                 )
             else:

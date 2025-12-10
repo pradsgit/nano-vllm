@@ -76,6 +76,8 @@ class Scheduler:
             # update sequence
             seq.block_table = allocated_blocks
             seq.status = SequenceStatus.RUNNING
+            if num_cached_tokens > 0:
+                seq.num_cached_tokens += num_cached_tokens
             self.waiting.popleft()
             self.running.append(seq)
 
