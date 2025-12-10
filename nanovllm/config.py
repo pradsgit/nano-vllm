@@ -12,6 +12,7 @@ class Config:
     gpu_memory_utilization: float = 0.9
     kvcache_block_size: int = 256
     num_kvcache_blocks: int = 500
+    max_num_batched_tokens: int = 4000 # max number of tokens through a forward pass
 
     def __post_init__(self):
         # assert os.path.isdir(self.model)

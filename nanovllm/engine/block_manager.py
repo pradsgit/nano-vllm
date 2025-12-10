@@ -17,7 +17,6 @@ class KVCacheBlock:
         self,
         id
     ):  
-        # unique id
         self.id = id
         # will be assigned when the block is full, and reset it when evicted
         self.hash = -1 
@@ -249,29 +248,43 @@ class BlockManager:
 
         return all_blocks
     
-    def append_slots(self, seq: Sequence):
+    def append_slots(self, seq: Sequence, num_new_tokens: int):
         """
-        ensure the seq has sufficient capacity to process the current token
+        Ensure seq has sufficient capacity for num_new_tokens.
+        Allocates additional blocks as needed.
         """
         blocks = self.request_blocks[seq.id]
-        last_block_id = blocks[-1]
-        last_block = self.block_pool[last_block_id]
-
-        if len(last_block.token_ids) >= self.block_size:
-            # block is full, allocate a new block
-            if not self.can_allocate(1):
-                raise ValueError(f"Cannot allocate block for seq {seq.seq_id}")
+        
+        # Calculate total tokens after processing this step
+        total_tokens_after = seq.num_cached_tokens + num_new_tokens
+        
+        # Calculate how many blocks we need
+        blocks_needed = (total_tokens_after + self.block_size - 1) // self.block_size
+        blocks_have = len(blocks)
+        
+        # Allocate additional blocks if needed
+        additional_blocks_needed = blocks_needed - blocks_have
+        
+        if additional_blocks_needed > 0:
+            if not self.can_allocate(additional_blocks_needed):
+                raise ValueError(
+                    f"Cannot allocate {additional_blocks_needed} blocks for seq {seq.id}"
+                )
             
-            new_block = self._pop_from_free_queue()
-            # evict if block is cached
-            if new_block.hash != -1:
-                del self.cache_blocks[new_block.hash]
-                new_block.reset()
-            else:
-                new_block.ref_count += 1
-
-            blocks.append(new_block.id)
-            seq.block_table.append(new_block.id)
+            # Allocate the needed blocks
+            for _ in range(additional_blocks_needed):
+                new_block = self._pop_from_free_queue()
+                
+                # Evict if block is cached
+                if new_block.hash != -1:
+                    del self.cache_blocks[new_block.hash]
+                    new_block.reset()
+                else:
+                    new_block.ref_count = 1
+                
+                # Add to sequence's blocks
+                blocks.append(new_block.id)
+                seq.block_table.append(new_block.id)
 
     def update_block_with_token(self, seq_id: str, token_id: int):
         """

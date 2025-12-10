@@ -86,7 +86,7 @@ class RMSNorm(nn.Module):
 
         # add residual if provided
         if residual is not None:
-            x = x.float().add_(residual) # x.float() will create a new tensor if and only if x dtype is not float32
+            x = x.float().add_(residual) # x.float() will create a new tensor, only if x dtype is not float32
             new_residual = x.to(x_dtype)
 
         # compute rms in float32

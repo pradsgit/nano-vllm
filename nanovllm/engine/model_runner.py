@@ -58,7 +58,7 @@ class ModelRunner:
             seqlen = len(seq)
             if seq.is_prefill:
                 start = seq.num_cached_tokens
-                end = seqlen
+                end = start + seq.num_scheduled_tokens
                 input_ids.extend(seq.prompt_tokens[start:end])
                 positions.extend(list(range(start, end)))
                 # get slot mapping for currently processing tokens
@@ -82,8 +82,8 @@ class ModelRunner:
 
             slot_mapping.extend(slots)
 
-            seqlen_q = seqlen - seq.num_cached_tokens
-            seqlen_k = seqlen
+            seqlen_q = seq.num_scheduled_tokens
+            seqlen_k = seq.num_cached_tokens + seq.num_scheduled_tokens
 
             cu_seqlens_q.append(cu_seqlens_q[-1] + seqlen_q)
             cu_seqlens_k.append(cu_seqlens_k[-1] + seqlen_k)
@@ -204,21 +204,39 @@ class ModelRunner:
         ctx = get_context()
 
         logits = self.run_model(input_ids, positions) # logits shape: (num_tokens, vocab_size)
+        
+        # the logits contain seqs with partial prefill for which we do not want to sample tokens from,
+        # only sample tokens from seqs that have processed full prefill or decode phase
+        # how do you check for it? probably check seq.num_cached_tokens >= seq.prompt_tokens?
+        
+        # cu_seqlens_q = [0, 16, 29, 541, 1043]
 
         token_positions = ctx.cu_seqlens_q[1:] - 1 # get last token at each sequence ending position boundary 
         logits_sampling = logits[token_positions] # (num_seqs, vocab_size)
 
-        # run sampling to get the tokens
-        temperature = (
-            torch.tensor(
-                [seq.sampling_params.temperature for seq in seqs],
-                dtype=torch.float32,
-                device=logits.device,
-            )
+        # Identify which sequences completed prefill
+        completed_prefill_mask = []
+        for seq in seqs:
+            total_processed = seq.num_cached_tokens + seq.num_scheduled_tokens
+            is_complete = total_processed >= len(seq.prompt_tokens)
+            completed_prefill_mask.append(is_complete)
+
+        # Only sample for completed prefills
+        temperature = torch.tensor(
+            [seq.sampling_params.temperature for seq in seqs],
+            dtype=torch.float32,
+            device=logits.device,
         )
 
-        next_tokens = self.sampler(logits_sampling, temperature)
+        all_tokens = self.sampler(logits_sampling, temperature).tolist()
 
-        return next_tokens.tolist()
+        next_tokens = []
+        for i, (seq, token, is_complete) in enumerate(zip(seqs, all_tokens, completed_prefill_mask)):
+            if is_complete:
+                next_tokens.append(token)
+            else:
+                next_tokens.append(None)  # Placeholder for partial prefill
+        
+        return next_tokens
 
         

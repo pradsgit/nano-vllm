@@ -11,7 +11,10 @@ class Scheduler:
     ):
         self.max_num_seqs = config.max_num_seqs
         self.block_size = config.kvcache_block_size
+        self.max_scheduled_tokens = config.max_num_batched_tokens
+        self.long_prefill_token_threshold = 512 # maybe move this to config?
         self.eos = config.eos
+
         self.block_manager = BlockManager(config.num_kvcache_blocks, config.kvcache_block_size)
         self.waiting: deque[Sequence] = deque()
         self.running: deque[Sequence] = deque()
@@ -28,63 +31,88 @@ class Scheduler:
         scheduled_seqs = []
         num_prefill = 0
         num_seqs = 0
+        token_budget = self.max_scheduled_tokens
 
-        # first schedule RUNNING seqs
+        # Step 1: Schedule RUNNING seqs
         running_seqs = []
-        while self.running and num_seqs < self.max_num_seqs:
+        while self.running and token_budget > 0:
             seq = self.running.popleft()
             if seq.is_finished:
-                continue  # Don't add finished seqs back
-
-            try:
-                self.block_manager.append_slots(seq)
-            except ValueError as e:
-                print(f'Cannot allocate block for seq {seq.seq_id}: {e}')
-                #TODO: handle preemption
                 continue
 
+            # check if still prefilling or decode
+            if seq.num_cached_tokens < len(seq.prompt_tokens):
+                # partial prefill
+                num_remaining = len(seq.prompt_tokens) - seq.num_cached_tokens
+                num_new_tokens = min(num_remaining, self.long_prefill_token_threshold, token_budget)
+            else:
+                # decode
+                num_new_tokens = 1
+
+            try:
+                # allocate blocks for decode or continuation of partial prefill
+                self.block_manager.append_slots(seq, num_new_tokens)
+            except ValueError as e:
+                print(f'Cannot allocate block for seq {seq.seq_id}: {e}')
+                continue
+
+            seq.num_scheduled_tokens = num_new_tokens
+            token_budget -= num_new_tokens
             running_seqs.append(seq)
             num_seqs += 1
 
-        # Add running seqs back to self.running (maintain order)
         self.running.extendleft(reversed(running_seqs))
         scheduled_seqs.extend(running_seqs)
 
-        # step2: try to schedule waiting sequences, prefill phase
-        while self.waiting and num_seqs < self.max_num_seqs:
-            print('waiting seqs found.. adding')
+        # Step 2: Schedule WAITING seqs
+        while self.waiting and token_budget > 0:
             seq = self.waiting[0]
+            print(f'waiting seqs found.. processing seq: {seq.id}')
 
-            # check if blocks are already computed for prompt tokens
-            cached_blocks, num_cached_tokens = self.block_manager.get_computed_blocks(seq.prompt_tokens)
-
+            # Check prefix cache
+            cached_blocks, num_cached_tokens = (
+                self.block_manager.get_computed_blocks(seq.prompt_tokens)
+            )
+            
             num_new_tokens = len(seq.prompt_tokens) - num_cached_tokens
-            # calculate blocks needed for tokens that are not cached
+            threshold = self.long_prefill_token_threshold
+
+            # Apply chunking
+            if 0 < threshold < num_new_tokens:
+                num_new_tokens = threshold
+            num_new_tokens = min(num_new_tokens, token_budget)
+            
+            print(f'num new tokens: {num_new_tokens}')
             blocks_needed = (num_new_tokens + self.block_size - 1) // self.block_size
+            print(f'blocks needed: {blocks_needed}')
 
             if not self.block_manager.can_allocate(blocks_needed):
                 print('cannot allocated blocks to this sequence')
-                break  # can't schedule this seq yet
+                break
             
-            # call allocate_slots of block_manager to get the complete block_table
+            # Allocate slots
             allocated_blocks = self.block_manager.allocate_slots(
                 seq=seq,
                 cached_blocks=cached_blocks,
                 num_new_blocks=blocks_needed
             )
 
-            # update sequence
+            print(f'seq block_table: {allocated_blocks}')
+
+            # Update sequence
             seq.block_table = allocated_blocks
+            seq.num_cached_tokens = num_cached_tokens  # Set, not add!
+            seq.num_scheduled_tokens = num_new_tokens
             seq.status = SequenceStatus.RUNNING
-            if num_cached_tokens > 0:
-                seq.num_cached_tokens += num_cached_tokens
+            token_budget -= num_new_tokens
+            
             self.waiting.popleft()
             self.running.append(seq)
-
             scheduled_seqs.append(seq)
             num_prefill += 1
             num_seqs += 1
 
+        print(f'remaining token budget: {token_budget}')
         return scheduled_seqs, num_prefill > 0
 
     def free_finished(self):
@@ -115,15 +143,13 @@ class Scheduler:
         token_ids: list[int],
     ):
         for seq, token_id in zip(seqs, token_ids):
-            if seq.is_prefill:
-                # we saved prompt_tokens number of tokens in cache
-                seq.num_cached_tokens = len(seq.prompt_tokens)
-            else:
-                seq.num_cached_tokens += 1 # we only cached one token
-            seq.add_token(token_id)
+            seq.num_cached_tokens += seq.num_scheduled_tokens
 
-            # Update block manager with the new token and cache if full
-            self.block_manager.update_block_with_token(seq.id, token_id)
+            # Only add token if prefill complete
+            if token_id is not None:
+                seq.add_token(token_id)
+                # Update block manager with the new token and cache if full
+                self.block_manager.update_block_with_token(seq.id, token_id)
             
             # check if seq is finished
             # 1. max tokens reached or eos token emitted

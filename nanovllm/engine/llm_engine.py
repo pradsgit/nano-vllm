@@ -74,26 +74,33 @@ class LLMEngine:
 
     def step(self):
         """
-        schedule, run and extract output for one generation step
+        Executes one generation step
         """
-        # schedule the sequences to run
         running_seqs, is_prefill = self.scheduler.schedule()
 
         if not running_seqs:
             return ValueError('No sequences to process for this step')
-        
-        # run the model
+
+        # Run the model
         next_tokens = self.model_runner.run(running_seqs, is_prefill)
         assert len(running_seqs) == len(next_tokens)
+
+        # Update sequences
         self.scheduler.update_from_output(running_seqs, token_ids=next_tokens)
 
-        # make output
-        output = [
-            (seq.id, seq.prompt_tokens.copy() + seq.output_tokens.copy())
-            for seq in running_seqs
-        ]
+        # Only include sequences that generated tokens (completed prefill)
+        output = []
+        for seq, token in zip(running_seqs, next_tokens):
+            if token is not None:  # Only completed prefills/decodes
+                output.append((
+                    seq.id, 
+                    seq.prompt_tokens.copy() + seq.output_tokens.copy()
+                ))
         
-        return output, 1
+        # Return number of sequences that actually generated tokens
+        num_generated = sum(1 for t in next_tokens if t is not None)
+        
+        return output, num_generated
 
     def is_finished(self):
         return self.scheduler.is_finished()
@@ -118,39 +125,52 @@ class LLMEngine:
     ):
         metrics = GenerationMetrics()
 
-        # check if sampling_params is a list and its length is equal to prompts length
+        # Check sampling_params
         if not isinstance(sampling_params, list):
             sampling_params = [sampling_params] * len(prompts)
         else:
-            # is a list, its length must be equal to prompts length
-            assert len(prompts) == len(sampling_params), "sampling_params list length does not match with prompts length"
+            assert len(prompts) == len(sampling_params)
 
-        # we have list of prompts and their corresponding sampling_params
+        # Add all requests
         for prompt, sp in zip(prompts, sampling_params):
-            self.add_request(prompt, sp)
+            seq = self.add_request(prompt, sp)
+            metrics.add_sequence(seq.id, seq.num_tokens)
 
+        first_token_received = set()
         outputs = {}
 
-        is_prefill = True
-
+        # generation loop
         while not self.is_finished():
             t0 = time.time()
-            output, num_tokens = self.step()
-            step_time = time.time() - t0
+            output, num_generated = self.step()
+            elapsed = time.time() - t0
 
-            if is_prefill:
-                metrics.prefill_time = step_time
-                is_prefill = False
-            else:
-                metrics.decode_times.append(step_time)
-
+            # output might be empty if all sequences are partial prefills
+            if not output:
+                continue  # Skip metrics for this step
+            
             for seq_id, token_ids in output:
                 outputs[seq_id] = token_ids
 
+                # Record first token (first time we see this seq_id in output)
+                if seq_id not in first_token_received:
+                    metrics.record_first_token(seq_id)
+                    first_token_received.add(seq_id)
+                else:
+                    # Subsequent tokens are decode steps
+                    metrics.record_decode_step(seq_id, elapsed)
 
-        outputs = [outputs[seq_id] for seq_id in sorted(outputs.keys())]
-        metrics.num_generated_tokens = sum([len(token_ids) for token_ids in outputs])
+        # record completion for all sequences
+        for seq_id in sorted(outputs.keys()):
+            metrics.record_completion(seq_id, len(outputs[seq_id]))
+
         metrics.print_summary()
-        outputs = [{"text": self.tokenizer.decode(token_ids), "token_ids": token_ids} for token_ids in outputs]
+        
+        # format outputs
+        outputs = [outputs[seq_id] for seq_id in sorted(outputs.keys())]
+        outputs = [
+            {"text": self.tokenizer.decode(token_ids), "token_ids": token_ids} 
+            for token_ids in outputs
+        ]
         return outputs
 
