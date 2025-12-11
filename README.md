@@ -1,6 +1,6 @@
 # nano-vLLM
 
-A minimal implementation of vLLM's core inference optimizations, built from scratch to understand modern LLM serving.
+A minimal implementation of vLLM's v1 architecture core inference optimizations, built from scratch to understand modern LLM serving.
 
 ## Why?
 
@@ -11,9 +11,10 @@ Modern inference engines achieve 2-4x higher throughput than naive serving throu
 ✅ **Continuous Batching** - Dynamic request scheduling with prefill/decode interleaving
 ✅ **PagedAttention** - Non-contiguous KV cache allocation with block-based memory management  
 ✅ **Flash Attention** - Memory-efficient attention computation  
-✅ **Prefix Caching** - Hash-based block sharing for sequences with common prefixes  
+✅ **Prefix Caching** - Hash-based block sharing for sequences with common prefixes
+✅ **Chunked prefill** - Process long sequences in manageable chunks to reduce throttling of other requests
 
-🚧 **Coming Soon**: Chunked prefill, CUDA graphs, tensor parallelism, quantization
+🚧 **Coming Soon**: CUDA graphs, tensor parallelism, quantization
 
 ## Key Insights
 
