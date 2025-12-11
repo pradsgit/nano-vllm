@@ -96,11 +96,11 @@ class BlockManager:
         finds the longest prefix of blocks that are cached
 
         returns:
-            tuple -> (list of cached block ids, num_cached_tokens)
+            tuple -> (list of cached block ids, num_computed_tokens)
         """
 
         cached_blocks = []
-        num_cached_tokens = 0
+        num_computed_tokens = 0
         hash = -1
 
         blocks_needed = (len(token_ids) + self.block_size - 1) // self.block_size # ceil div
@@ -122,9 +122,9 @@ class BlockManager:
                 break
             print(f'prefix cache found, reusing this block: {self.block_pool[block_id]}')
             cached_blocks.append(block_id)
-            num_cached_tokens += len(block_tokens)
+            num_computed_tokens += len(block_tokens)
 
-        return cached_blocks, num_cached_tokens
+        return cached_blocks, num_computed_tokens
     
     def _remove_from_free_queue(self, block: KVCacheBlock):
         if block.prev_free_block is not None:
@@ -256,7 +256,7 @@ class BlockManager:
         blocks = self.request_blocks[seq.id]
         
         # Calculate total tokens after processing this step
-        total_tokens_after = seq.num_cached_tokens + num_new_tokens
+        total_tokens_after = seq.num_computed_tokens + num_new_tokens
         
         # Calculate how many blocks we need
         blocks_needed = (total_tokens_after + self.block_size - 1) // self.block_size

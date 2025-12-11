@@ -18,7 +18,7 @@ class Sequence:
 
         self.prompt_tokens = prompt_tokens.copy()
         self.output_tokens = []
-        self.num_cached_tokens = 0 # num tokens with saved kv_cache
+        self.num_computed_tokens = 0 # num tokens with saved kv_cache
         self.num_scheduled_tokens = 0 # tokens scheduled to process this step
         # memory management for PagedAttention
         self.block_table = [] # this stores allocated block_ids

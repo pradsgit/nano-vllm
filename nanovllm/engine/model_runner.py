@@ -57,7 +57,7 @@ class ModelRunner:
             # if seq is prefill stage
             seqlen = len(seq)
             if seq.is_prefill:
-                start = seq.num_cached_tokens
+                start = seq.num_computed_tokens
                 end = start + seq.num_scheduled_tokens
                 input_ids.extend(seq.prompt_tokens[start:end])
                 positions.extend(list(range(start, end)))
@@ -72,7 +72,7 @@ class ModelRunner:
                 input_ids.append(seq.output_tokens[-1])
                 positions.append(seq.num_tokens - 1)
                 
-                current_pos = seq.num_cached_tokens
+                current_pos = seq.num_computed_tokens
                 slots = self.get_slot_mapping(
                     seq.block_table,
                     start_pos=current_pos,
@@ -83,7 +83,7 @@ class ModelRunner:
             slot_mapping.extend(slots)
 
             seqlen_q = seq.num_scheduled_tokens
-            seqlen_k = seq.num_cached_tokens + seq.num_scheduled_tokens
+            seqlen_k = seq.num_computed_tokens + seq.num_scheduled_tokens
 
             cu_seqlens_q.append(cu_seqlens_q[-1] + seqlen_q)
             cu_seqlens_k.append(cu_seqlens_k[-1] + seqlen_k)
@@ -207,7 +207,7 @@ class ModelRunner:
         
         # the logits contain seqs with partial prefill for which we do not want to sample tokens from,
         # only sample tokens from seqs that have processed full prefill or decode phase
-        # how do you check for it? probably check seq.num_cached_tokens >= seq.prompt_tokens?
+        # how do you check for it? probably check seq.num_computed_tokens >= seq.prompt_tokens?
         
         # cu_seqlens_q = [0, 16, 29, 541, 1043]
 
@@ -217,7 +217,7 @@ class ModelRunner:
         # Identify which sequences completed prefill
         completed_prefill_mask = []
         for seq in seqs:
-            total_processed = seq.num_cached_tokens + seq.num_scheduled_tokens
+            total_processed = seq.num_computed_tokens + seq.num_scheduled_tokens
             is_complete = total_processed >= len(seq.prompt_tokens)
             completed_prefill_mask.append(is_complete)
 

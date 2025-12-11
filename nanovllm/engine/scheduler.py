@@ -41,9 +41,9 @@ class Scheduler:
                 continue
 
             # check if still prefilling or decode
-            if seq.num_cached_tokens < len(seq.prompt_tokens):
+            if seq.num_computed_tokens < len(seq.prompt_tokens):
                 # partial prefill
-                num_remaining = len(seq.prompt_tokens) - seq.num_cached_tokens
+                num_remaining = len(seq.prompt_tokens) - seq.num_computed_tokens
                 num_new_tokens = min(num_remaining, self.long_prefill_token_threshold, token_budget)
             else:
                 # decode
@@ -70,11 +70,11 @@ class Scheduler:
             print(f'waiting seqs found.. processing seq: {seq.id}')
 
             # Check prefix cache
-            cached_blocks, num_cached_tokens = (
+            cached_blocks, num_computed_tokens = (
                 self.block_manager.get_computed_blocks(seq.prompt_tokens)
             )
             
-            num_new_tokens = len(seq.prompt_tokens) - num_cached_tokens
+            num_new_tokens = len(seq.prompt_tokens) - num_computed_tokens
             threshold = self.long_prefill_token_threshold
 
             # Apply chunking
@@ -101,7 +101,7 @@ class Scheduler:
 
             # Update sequence
             seq.block_table = allocated_blocks
-            seq.num_cached_tokens = num_cached_tokens  # Set, not add!
+            seq.num_computed_tokens = num_computed_tokens  # Set, not add!
             seq.num_scheduled_tokens = num_new_tokens
             seq.status = SequenceStatus.RUNNING
             token_budget -= num_new_tokens
@@ -143,7 +143,7 @@ class Scheduler:
         token_ids: list[int],
     ):
         for seq, token_id in zip(seqs, token_ids):
-            seq.num_cached_tokens += seq.num_scheduled_tokens
+            seq.num_computed_tokens += seq.num_scheduled_tokens
 
             # Only add token if prefill complete
             if token_id is not None:
